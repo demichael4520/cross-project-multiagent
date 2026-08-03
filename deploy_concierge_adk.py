@@ -11,16 +11,20 @@ load_dotenv()
 
 def main():
     parser = argparse.ArgumentParser(description="Deploy Purchasing Concierge Agent to Agent Runtime with Agent Identity")
-    parser.add_argument("--project", default=os.getenv("GOOGLE_CLOUD_PROJECT", "ge-test-3p-only-2"), help="GCP Project ID")
-    parser.add_argument("--region", default=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"), help="GCP Region")
-    parser.add_argument("--staging-bucket", default=os.getenv("STAGING_BUCKET", "gs://cloud-ai-platform-4b9e1436-0660-427d-be6d-5ce6712f87a1"), help="Staging GCS bucket")
+    parser.add_argument("--project", required=True, help="Google Cloud Project ID")
+    parser.add_argument("--region", default="us-central1", help="Vertex AI Region")
+    parser.add_argument("--staging-bucket", help="GCS bucket for staging (default: gs://PROJECT_ID-staging)")
     parser.add_argument("--enable-agent-identity", action="store_true", help="Enable Agent Identity for concierge agent")
     args = parser.parse_args()
+
+    staging_bucket = args.staging_bucket or f"gs://{args.project}-staging"
+    if not staging_bucket.startswith("gs://"):
+        staging_bucket = f"gs://{staging_bucket}"
 
     vertexai.init(
         project=args.project,
         location=args.region,
-        staging_bucket=args.staging_bucket,
+        staging_bucket=staging_bucket,
     )
 
     from purchasing_concierge.agent import root_agent
