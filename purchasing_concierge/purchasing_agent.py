@@ -91,6 +91,30 @@ Current active seller agent: {current_agent["active_agent"]}
 
     async def before_agent_callback(self, callback_context: CallbackContext):
         if not self.a2a_client_init_status:
+            project = os.getenv("GOOGLE_CLOUD_PROJECT", "deepakmichael-svc3")
+            location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+            
+            try:
+                from google.adk.integrations.agent_registry import AgentRegistry
+                registry = AgentRegistry(project_id=project, location=location)
+                response = registry.list_agents()
+                
+                discovered_agents = {}
+                for agent in response.get("agents", []):
+                    display_name = agent.get("displayName")
+                    runtime_ref = agent.get("adkAgentDefinition", {}).get("provisionedReasoningEngine", {}).get("reasoningEngine")
+                    if display_name and runtime_ref:
+                        discovered_agents[display_name] = runtime_ref
+                        if "burger" in display_name.lower():
+                            discovered_agents["burger_seller_agent"] = runtime_ref
+                        elif "pizza" in display_name.lower():
+                            discovered_agents["pizza_seller_agent"] = runtime_ref
+
+                if discovered_agents:
+                    self.agent_ids.update(discovered_agents)
+            except Exception as e:
+                print(f"Warning: Failed to query Agent Registry in project {project}: {e}")
+
             agent_info = []
             for name, meta in self.agent_metadata.items():
                 if name in self.agent_ids:
