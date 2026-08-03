@@ -1,8 +1,8 @@
 # Multi-Agent Purchasing Concierge on Vertex AI Agent Runtime (ADK)
 
-This project implements a multi-agent purchasing concierge system deployed on **Vertex AI Agent Runtime (Reasoning Engine)** using the Google **Agent Development Kit (ADK)**. 
+This project implements a multi-agent purchasing concierge system deployed on **Vertex AI Agent Runtime (Reasoning Engine)** using the Google **Agent Development Kit (ADK)** and **Agent Identity**.
 
-It is adapted from the [A2A Purchasing Concierge Codelab](https://codelabs.developers.google.com/intro-a2a-purchasing-concierge?hl=en#1), shifting the target runtime from Cloud Run to Agent Runtime (Reasoning Engines) for enhanced integration with Google's agent platform.
+It is adapted from the [A2A Purchasing Concierge Codelab](https://codelabs.developers.google.com/intro-a2a-purchasing-concierge?hl=en#1), shifting the target runtime from Cloud Run to Agent Runtime (Reasoning Engines) for enhanced integration with Google's agent platform and secure multi-agent communication.
 
 ## Architecture Overview
 
@@ -41,19 +41,9 @@ sequenceDiagram
     deactivate Concierge
 ```
 
-1.  **Purchasing Concierge (Root Agent)**: Coordinates the purchasing flow. It receives the user's intent (e.g., ordering both burgers and pizzas), splits the request, programmatically queries the respective seller agents, aggregates their responses, and returns the final order confirmation.
+1.  **Purchasing Concierge (Root Agent)**: Coordinates the purchasing flow. It receives the user's intent, splits the request, programmatically queries the respective seller agents, aggregates their responses, and returns the final order confirmation.
 2.  **Burger Seller Agent**: A specialized agent handling queries about the burger menu and executing order creation.
 3.  **Pizza Seller Agent**: A specialized agent handling queries about the pizza menu and executing order creation.
-
----
-
-## Technical Details & Workarounds
-
-To support cross-agent communication on Vertex AI Agent Runtime, several platform limitations had to be addressed:
-
-1.  **Custom Client-Side Call Routing**: Since Reasoning Engines do not expose public HTTP endpoints, ADK's native `RemoteA2aAgent` (which relies on standard A2A HTTP protocols and GET `/agent.json` cards) cannot be used directly. Instead, the Purchasing Concierge uses a **custom Python tool** (`send_task`) that routes queries programmatically via the **Vertex AI GAPIC streaming client** (`stream_query_reasoning_engine`).
-2.  **Session Auto-Creation Monkey-Patch**: The ADK template (`AdkApp`) normally throws a `SessionNotFoundError` if a client queries it with a new `session_id`. Since the Concierge must propagate its session tracking, we **monkey-patch** `google.adk.runners.Runner` inside the seller agents at runtime to enforce `auto_create_session = True`.
-3.  **Interactive Playground Compatibility**: ADK agents require multiple parameters (`message`, `user_id`) which conflict with the Google Cloud Console Playground's single-argument expectation. The Purchasing Concierge is wrapped in `PlaygroundCompatibleAdkAgent` to map playground payloads to ADK's internal streaming runner.
 
 ---
 
@@ -61,22 +51,34 @@ To support cross-agent communication on Vertex AI Agent Runtime, several platfor
 
 Ensure you have the following before starting:
 *   A Google Cloud Project with the Vertex AI API enabled.
-*   The `gcloud` CLI installed and authenticated.
-*   Python 3.10+ environment with the Vertex AI SDK and ADK installed:
+*   The `gcloud` CLI installed and authenticated (`gcloud auth login`).
+*   [uv](https://github.com/astral-sh/uv) installed for dependency management:
     ```bash
-    pip install google-cloud-aiplatform[agent_engines] google-adk==1.31.1 pydantic cloudpickle
+    pip install uv
     ```
+
+---
+
+## Installation & Environment Setup
+
+Clone the repository and sync dependencies using `uv`:
+
+```bash
+git clone https://github.com/demichael4520/multiagent-a2a.git
+cd multiagent-a2a
+uv sync
+```
 
 ---
 
 ## Deployment Sequence
 
-Deployment must follow a strict order because the Root Agent requires the Resource IDs of the Seller Agents at deployment time.
+Deployment must follow a strict order because the Root Agent requires the Resource IDs of the Seller Agents at deployment time. You can optionally enable **Agent Identity** (SPIFFE/mTLS managed machine identity) using the `--enable-agent-identity` flag.
 
 ### Step 1: Deploy Seller Agents
 Run the deployment script to deploy both the Burger and Pizza seller agents:
 ```bash
-python deploy_sellers_adk.py
+uv run python deploy_sellers_adk.py --project=YOUR_PROJECT_ID --enable-agent-identity
 ```
 This script will:
 1.  Package and deploy the Burger Agent to Agent Runtime.
@@ -86,7 +88,7 @@ This script will:
 ### Step 2: Deploy Purchasing Concierge (Root Agent)
 Run the deployment script for the Purchasing Concierge:
 ```bash
-python deploy_concierge_adk.py
+uv run python deploy_concierge_adk.py --project=YOUR_PROJECT_ID --enable-agent-identity
 ```
 This script will:
 1.  Read the Seller Agent Resource IDs from `seller_agents.env` and set them as environment variables inside the Concierge's container.
@@ -128,7 +130,7 @@ TOKEN=$(gcloud auth print-access-token)
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  https://us-central1-aiplatform.googleapis.com/v1beta1/projects/ge-test-3p-only-2/locations/us-central1/reasoningEngines/3258707823390883840:query \
+  https://us-central1-aiplatform.googleapis.com/v1beta1/projects/YOUR_PROJECT_ID/locations/us-central1/reasoningEngines/YOUR_CONCIERGE_RESOURCE_ID:query \
   -d '{
     "input": {
       "input": "I want to order 1 classic cheeseburger and 2 pepperoni pizzas.",
