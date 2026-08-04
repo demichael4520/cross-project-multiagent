@@ -49,7 +49,7 @@ sequenceDiagram
 
 ## Prerequisites
 
-* A Google Cloud Project with Vertex AI API enabled (`deepakmichael-svc3`).
+* A Google Cloud Project with Vertex AI API enabled.
 * Google Cloud SDK (`gcloud`) installed and authenticated.
 * [uv](https://github.com/astral-sh/uv) installed for fast Python dependency management.
 
@@ -69,17 +69,23 @@ uv sync
 
 ## Deployment Guide
 
+Export your GCP configuration variables:
+```bash
+export PROJECT_ID="your-gcp-project-id"
+export REGION="us-central1"
+```
+
 ### Step 1: Deploy Seller Agents
 Deploy both the Burger and Pizza seller agents to Agent Runtime with Agent Identity:
 ```bash
-uv run python deploy_sellers_adk.py --project=deepakmichael-svc3 --region=us-central1
+uv run python deploy_sellers_adk.py --project=$PROJECT_ID --region=$REGION
 ```
 This script deploys the specialist agents and saves their resource references to `seller_agents.env`.
 
 ### Step 2: Deploy Purchasing Concierge (Root Agent)
 Deploy the root orchestrator, configuring it with the Agent Gateway and Agent Registry autodiscovery capabilities:
 ```bash
-uv run python deploy_concierge_adk.py --project=deepakmichael-svc3 --region=us-central1
+uv run python deploy_concierge_adk.py --project=$PROJECT_ID --region=$REGION
 ```
 
 ---
@@ -104,35 +110,56 @@ This guarantees that if specialist agent endpoints are redeployed or scaled, the
 
 ---
 
-## Testing & Validation
+## Testing & Validation via curl (REST API)
 
-### 1. Python SDK Test
-```python
-import vertexai
-from vertexai.preview.reasoning_engines import ReasoningEngine
-
-vertexai.init(project="deepakmichael-svc3", location="us-central1")
-concierge = ReasoningEngine("projects/933480738993/locations/us-central1/reasoningEngines/7831884546567045120")
-
-response = concierge.query(
-    input="I want to order 1 classic cheeseburger and 2 pepperoni pizzas.",
-    user_id="customer_1"
-)
-print(response.get("output"))
+Set your authentication token and deployed resource identifiers:
+```bash
+export TOKEN=$(gcloud auth print-access-token)
+export PROJECT_ID="your-gcp-project-id"
+export REGION="us-central1"
+export CONCIERGE_ENGINE_ID="your-concierge-engine-id"
+export BURGER_ENGINE_ID="your-burger-engine-id"
+export PIZZA_ENGINE_ID="your-pizza-engine-id"
 ```
 
-### 2. REST API via curl
+### 1. Validate Purchasing Concierge (Root Agent)
 ```bash
-TOKEN=$(gcloud auth print-access-token)
-
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  https://us-central1-aiplatform.googleapis.com/v1beta1/projects/deepakmichael-svc3/locations/us-central1/reasoningEngines/7831884546567045120:query \
+  https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines/$CONCIERGE_ENGINE_ID:query \
   -d '{
     "input": {
       "input": "I want to order 1 classic cheeseburger and 2 pepperoni pizzas.",
       "user_id": "terminal_user"
+    }
+  }'
+```
+
+### 2. Validate Burger Seller Agent (Subagent)
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines/$BURGER_ENGINE_ID:query \
+  -d '{
+    "input": {
+      "message": "I want to order 1 cheeseburger",
+      "user_id": "test_user"
+    }
+  }'
+```
+
+### 3. Validate Pizza Seller Agent (Subagent)
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines/$PIZZA_ENGINE_ID:query \
+  -d '{
+    "input": {
+      "message": "I want to order 1 pepperoni pizza",
+      "user_id": "test_user"
     }
   }'
 ```
