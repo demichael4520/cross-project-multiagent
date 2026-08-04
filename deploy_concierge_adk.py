@@ -2,19 +2,17 @@
 import argparse
 import os
 import vertexai
-from vertexai import agent_engines
-from vertexai import types
 from dotenv import load_dotenv
 
 load_dotenv("seller_agents.env")
 load_dotenv()
 
 def main():
-    parser = argparse.ArgumentParser(description="Deploy Purchasing Concierge Agent to Agent Runtime with Agent Identity")
-    parser.add_argument("--project", required=True, help="Google Cloud Project ID")
+    parser = argparse.ArgumentParser(description="Deploy Purchasing Concierge with Agent Identity and Agent Gateway")
+    parser.add_argument("--project", default="deepakmichael-svc3", help="Google Cloud Project ID")
     parser.add_argument("--region", default="us-central1", help="Vertex AI Region")
-    parser.add_argument("--staging-bucket", help="GCS bucket for staging (default: gs://PROJECT_ID-staging)")
-    parser.add_argument("--enable-agent-identity", action="store_true", help="Enable Agent Identity for concierge agent")
+    parser.add_argument("--staging-bucket", help="GCS bucket for staging")
+    parser.add_argument("--gateway-name", default="megatron", help="Agent Gateway name")
     args = parser.parse_args()
 
     staging_bucket = args.staging_bucket or f"gs://{args.project}-staging"
@@ -27,23 +25,29 @@ def main():
         staging_bucket=staging_bucket,
     )
 
-    from purchasing_concierge.agent import root_agent
+    client = vertexai.Client(
+        project=args.project,
+        location=args.region,
+        http_options=dict(api_version="v1beta1"),
+    )
 
-    adk_app = agent_engines.AdkApp(
+    from purchasing_concierge.agent import root_agent
+    from vertexai.preview import reasoning_engines
+
+    adk_app = reasoning_engines.AdkApp(
         agent=root_agent,
+        enable_tracing=False,
         env_vars={
             "GOOGLE_GENAI_USE_VERTEXAI": "true",
-            "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
-            "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
-            "GOOGLE_CLOUD_PROJECT": args.project,
-            "GOOGLE_CLOUD_LOCATION": args.region,
+            "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", "projects/933480738993/locations/us-central1/reasoningEngines/5174760766418452480"),
+            "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", "projects/933480738993/locations/us-central1/reasoningEngines/6363711068044263424"),
         }
     )
 
     class PlaygroundCompatibleAdkAgent:
         agent_framework = "google-adk"
 
-        def __init__(self, app: agent_engines.AdkApp):
+        def __init__(self, app):
             self.app = app
 
         def set_up(self):
@@ -51,8 +55,8 @@ def main():
 
         def register_operations(self) -> dict[str, list[str]]:
             return {
-                "": ["query"],
-                "stream": ["stream_query"],
+                "": ["query", "async_query"],
+                "stream": ["stream_query", "async_stream_query"],
             }
 
         def _parse_args(self, input = None, user_id = None, session_id = None, **kwargs):
@@ -72,26 +76,31 @@ def main():
             if input is None:
                  raise ValueError("Either 'input' or 'message' must be provided")
 
-            if isinstance(input, dict):
-                if not input:
-                    message = ""
-                    effective_user_id = user_id or "console-tester-user"
-                    effective_session_id = session_id
+            while isinstance(input, dict):
+                user_id = user_id or input.get("user_id") or input.get("userId")
+                session_id = session_id or input.get("session_id") or input.get("sessionId")
+                
+                next_val = input.get("message")
+                if next_val is None:
+                    next_val = input.get("input")
+                if next_val is None:
+                    next_val = input.get("prompt")
+                if next_val is None:
+                    next_val = input.get("text")
+                
+                if next_val is not None:
+                    input = next_val
                 else:
-                    message = input.get("message")
-                    if message is None:
-                        message = input.get("input")
-                    if message is None:
-                        message = ""
+                    str_vals = [v for v in input.values() if isinstance(v, str)]
+                    if str_vals:
+                        input = str_vals[0]
                     else:
-                        message = str(message)
-                    
-                    effective_user_id = user_id or input.get("user_id") or input.get("userId") or "console-tester-user"
-                    effective_session_id = session_id or input.get("session_id") or input.get("sessionId")
-            else:
-                message = str(input)
-                effective_user_id = user_id or "console-tester-user"
-                effective_session_id = session_id
+                        input = str(input)
+                    break
+
+            message = str(input) if input is not None else ""
+            effective_user_id = user_id or "console-tester-user"
+            effective_session_id = session_id
                 
             return message, effective_user_id, effective_session_id, kwargs
 
@@ -113,30 +122,50 @@ def main():
             for chunk in self.app.stream_query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs):
                 yield chunk
 
+        async def async_query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
+            return self.query(input=input, user_id=user_id, session_id=session_id, **kwargs)
+
+        async def async_stream_query(self, input = None, user_id = None, session_id = None, **kwargs):
+            for chunk in self.stream_query(input=input, user_id=user_id, session_id=session_id, **kwargs):
+                yield chunk
+
     playground_app = PlaygroundCompatibleAdkAgent(app=adk_app)
 
-    identity_config = {"identity_type": types.IdentityType.AGENT_IDENTITY} if args.enable_agent_identity else {}
-
-    print("Deploying Purchasing Concierge to Agent Runtime...")
-    deploy_config = {
+    concierge_config = {
+        "staging_bucket": staging_bucket,
         "display_name": "purchasing-concierge-adk",
         "requirements": [
             "google-cloud-aiplatform[agent_engines]>=1.149.0",
             "google-adk[a2a,agent-identity]==1.34.0",
+            "cloudpickle",
+            "pydantic",
         ],
         "extra_packages": [
             "./purchasing_concierge",
         ],
-        **identity_config,
+        "identity_type": "AGENT_IDENTITY",
+        "agent_gateway_config": {
+            "agent_to_anywhere_config": {
+                "agent_gateway": f"projects/{args.project}/locations/{args.region}/agentGateways/{args.gateway_name}"
+            }
+        },
+        "env_vars": {
+            "GOOGLE_GENAI_USE_VERTEXAI": "true",
+            "AGENT_PROJECT_ID": args.project,
+            "AGENT_REGION": args.region,
+            "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
+            "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
+        },
     }
 
-    deployed_concierge = agent_engines.create(
-        agent_engine=playground_app,
-        config=deploy_config,
+    print("Deploying Purchasing Concierge with Agent Identity & Agent Gateway...")
+    deployed_concierge = client.agent_engines.create(
+        agent=playground_app,
+        config=concierge_config,
     )
-
-    print(f"Purchasing Concierge deployed: {deployed_concierge.resource_name}")
-    print(f"Concierge ID: {deployed_concierge.name}")
+    concierge_name = deployed_concierge.api_resource.name
+    print(f"Purchasing Concierge deployed: {concierge_name}")
+    print(f"Concierge ID: {concierge_name}")
 
 if __name__ == "__main__":
     main()

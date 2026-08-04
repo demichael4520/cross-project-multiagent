@@ -1,0 +1,18 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "principal://agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/933480738993/locations/us-central1/reasoningEngines/3445378509508182016",
+        "principal://agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/933480738993/locations/us-central1/reasoningEngines/3605256296279834624",
+        "principal://agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/933480738993/locations/us-central1/reasoningEngines/3632277894044057600",
+        "principal://agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/933480738993/locations/us-central1/reasoningEngines/443729357865746432",
+        "principal://agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/933480738993/locations/us-central1/reasoningEngines/5499019939589128192",
+        "principal://agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/933480738993/locations/us-central1/reasoningEngines/8822676464588554240",
+        "principal://agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/933480738993/locations/us-central1/reasoningEngines/7831884546567045120"
+      ],
+      "role": "roles/iap.egressor"
+    }
+  ],
+  "etag": "BwZYMoIYgKc=",
+  "version": 1
+}

@@ -1,67 +1,63 @@
 # Multi-Agent Purchasing Concierge on Vertex AI Agent Runtime (ADK)
 
-This project implements a multi-agent purchasing concierge system deployed on **Vertex AI Agent Runtime (Reasoning Engine)** using the Google **Agent Development Kit (ADK)** and **Agent Identity**.
+This project implements a secure, multi-agent purchasing concierge system deployed on **Vertex AI Agent Runtime (Reasoning Engines)** using the Google **Agent Development Kit (ADK)** and **Agent Identity / Agent Gateway**.
 
-It is adapted from the [A2A Purchasing Concierge Codelab](https://codelabs.developers.google.com/intro-a2a-purchasing-concierge?hl=en#1), shifting the target runtime from Cloud Run to Agent Runtime (Reasoning Engines) for enhanced integration with Google's agent platform and secure multi-agent communication.
+It demonstrates **A2A (Agent-to-Agent) Multi-Runtime Orchestration** with **Dynamic Autodiscovery via Agent Registry**, allowing coordinating root agents to discover and delegate tasks to specialist agents across isolated Reasoning Engine runtimes.
 
-## Architecture Overview
+---
 
-The system consists of three independent agents executing on separate Reasoning Engine runtimes:
+## Architecture & Multi-Runtime Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Client as User / Client
     participant Concierge as Purchasing Concierge (Root Agent)
+    participant Registry as Agent Registry
     participant Burger as Burger Seller Agent
     participant Pizza as Pizza Seller Agent
 
+    Note over Concierge,Registry: Dynamic Autodiscovery via Agent Registry
+    Concierge->>Registry: list_agents()
+    Registry-->>Concierge: Returns discovered Agent URIs & Resource IDs
+
     Client->>Concierge: query("I want to order 1 burger and 2 pizzas")
     activate Concierge
-    Note over Concierge: Concierge parses query and<br/>identifies sub-tasks for sellers.
     
-    par Call Burger Agent
+    par Delegate to Burger Agent
         Concierge->>Burger: stream_query("Order 1 classic cheeseburger", session_id)
-        activate Burger
-        Note over Burger: Runner forces auto_create_session
-        Burger->>Burger: execute tool: create_burger_order()
-        Burger-->>Concierge: returns Order ID & Summary
-        deactivate Burger
-    and Call Pizza Agent
+        Burger-->>Concierge: Returns Order ID & Summary
+    and Delegate to Pizza Agent
         Concierge->>Pizza: stream_query("Order 2 pepperoni pizzas", session_id)
-        activate Pizza
-        Note over Pizza: Runner forces auto_create_session
-        Pizza->>Pizza: execute tool: create_pizza_order()
-        Pizza-->>Concierge: returns Order ID & Summary
-        deactivate Pizza
+        Pizza-->>Concierge: Returns Order ID & Summary
     end
 
-    Note over Concierge: Concierge aggregates seller<br/>responses and formats final text.
-    Concierge-->>Client: returns aggregated order confirmation
+    Concierge-->>Client: Returns aggregated order confirmation
     deactivate Concierge
 ```
 
-1.  **Purchasing Concierge (Root Agent)**: Coordinates the purchasing flow. It receives the user's intent, splits the request, programmatically queries the respective seller agents, aggregates their responses, and returns the final order confirmation.
-2.  **Burger Seller Agent**: A specialized agent handling queries about the burger menu and executing order creation.
-3.  **Pizza Seller Agent**: A specialized agent handling queries about the pizza menu and executing order creation.
+---
+
+## Key Features & Best Practices
+
+1. **Decoupled Multi-Runtime Isolation**: Root orchestrators and specialist seller agents execute in separate Reasoning Engine containers on Vertex AI Agent Engine.
+2. **Dynamic Autodiscovery via Agent Registry**: Instead of relying solely on hardcoded IDs, agents query `google.adk.integrations.agent_registry.AgentRegistry` at runtime to discover deployed agent definitions, protocols, and stream endpoints.
+3. **Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway**: Integrates SPIFFE/mTLS managed machine identities and Agent Gateway routing for enterprise-grade policy governance and zero-trust multi-agent communication.
+4. **Robust Lifecycle & Cleanup**: Includes automated cleanup scripts (`cleanup_old_deployments.py`) using GAPIC force-deletion (`force=True`) to handle attached child sessions and prevent quota exhaustion.
 
 ---
 
 ## Prerequisites
 
-Ensure you have the following before starting:
-*   A Google Cloud Project with the Vertex AI API enabled.
-*   The `gcloud` CLI installed and authenticated (`gcloud auth login`).
-*   [uv](https://github.com/astral-sh/uv) installed for dependency management:
-    ```bash
-    pip install uv
-    ```
+* A Google Cloud Project with Vertex AI API enabled (`deepakmichael-svc3`).
+* Google Cloud SDK (`gcloud`) installed and authenticated.
+* [uv](https://github.com/astral-sh/uv) installed for fast Python dependency management.
 
 ---
 
-## Installation & Environment Setup
+## Installation & Setup
 
-Clone the repository and sync dependencies using `uv`:
+Clone the repository and sync dependencies:
 
 ```bash
 git clone https://github.com/demichael4520/multiagent-a2a.git
@@ -71,66 +67,68 @@ uv sync
 
 ---
 
-## Deployment Sequence
-
-Deployment must follow a strict order because the Root Agent requires the Resource IDs of the Seller Agents at deployment time. You can optionally enable **Agent Identity** (SPIFFE/mTLS managed machine identity) using the `--enable-agent-identity` flag.
+## Deployment Guide
 
 ### Step 1: Deploy Seller Agents
-Run the deployment script to deploy both the Burger and Pizza seller agents:
+Deploy both the Burger and Pizza seller agents to Agent Runtime with Agent Identity:
 ```bash
-uv run python deploy_sellers_adk.py --project=YOUR_PROJECT_ID --enable-agent-identity
+uv run python deploy_sellers_adk.py --project=deepakmichael-svc3 --region=us-central1
 ```
-This script will:
-1.  Package and deploy the Burger Agent to Agent Runtime.
-2.  Package and deploy the Pizza Agent to Agent Runtime.
-3.  Write the deployed Resource IDs to a local file named `seller_agents.env`.
+This script deploys the specialist agents and saves their resource references to `seller_agents.env`.
 
 ### Step 2: Deploy Purchasing Concierge (Root Agent)
-Run the deployment script for the Purchasing Concierge:
+Deploy the root orchestrator, configuring it with the Agent Gateway and Agent Registry autodiscovery capabilities:
 ```bash
-uv run python deploy_concierge_adk.py --project=YOUR_PROJECT_ID --enable-agent-identity
+uv run python deploy_concierge_adk.py --project=deepakmichael-svc3 --region=us-central1
 ```
-This script will:
-1.  Read the Seller Agent Resource IDs from `seller_agents.env` and set them as environment variables inside the Concierge's container.
-2.  Wrap the Concierge in the Playground compatibility helper.
-3.  Deploy the Concierge to Agent Runtime and print its Resource ID.
 
 ---
 
-## Querying the Root Agent
+## How Autodiscovery Works with Agent Registry
 
-### 1. Google Cloud Console Playground (Interactive UI)
-1. Go to the [Vertex AI Reasoning Engine Console](https://console.cloud.google.com/vertex-ai/reasoning-engines).
-2. Click on the deployed **`purchasing-concierge-adk`** agent.
-3. Use the right-hand **Test Agent** panel to chat directly.
+Inside `purchasing_agent.py`, the `before_agent_callback` hook queries the regional Agent Registry upon initialization:
 
-### 2. Python SDK
+```python
+from google.adk.integrations.agent_registry import AgentRegistry
+
+registry = AgentRegistry(project_id=project, location=location)
+response = registry.list_agents()
+
+for agent in response.get("agents", []):
+    display_name = agent.get("displayName")
+    runtime_ref = agent.get("adkAgentDefinition", {}).get("provisionedReasoningEngine", {}).get("reasoningEngine")
+    # Dynamically maps display names and reasoning engine resource IDs
+```
+
+This guarantees that if specialist agent endpoints are redeployed or scaled, the purchasing concierge automatically resolves their latest resource identifiers without requiring manual code updates.
+
+---
+
+## Testing & Validation
+
+### 1. Python SDK Test
 ```python
 import vertexai
 from vertexai.preview.reasoning_engines import ReasoningEngine
 
-vertexai.init(project="ge-test-3p-only-2", location="us-central1")
-agent = ReasoningEngine("YOUR_CONCIERGE_RESOURCE_ID")
+vertexai.init(project="deepakmichael-svc3", location="us-central1")
+concierge = ReasoningEngine("projects/933480738993/locations/us-central1/reasoningEngines/7831884546567045120")
 
-response = agent.query(
+response = concierge.query(
     input="I want to order 1 classic cheeseburger and 2 pepperoni pizzas.",
     user_id="customer_1"
 )
 print(response.get("output"))
 ```
 
-### 3. REST API via curl
-To send a prompt using the REST API from your terminal, execute the following commands:
-
+### 2. REST API via curl
 ```bash
-# 1. Get an authentication token
 TOKEN=$(gcloud auth print-access-token)
 
-# 2. Make the POST call to the query endpoint
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  https://us-central1-aiplatform.googleapis.com/v1beta1/projects/YOUR_PROJECT_ID/locations/us-central1/reasoningEngines/YOUR_CONCIERGE_RESOURCE_ID:query \
+  https://us-central1-aiplatform.googleapis.com/v1beta1/projects/deepakmichael-svc3/locations/us-central1/reasoningEngines/7831884546567045120:query \
   -d '{
     "input": {
       "input": "I want to order 1 classic cheeseburger and 2 pepperoni pizzas.",
