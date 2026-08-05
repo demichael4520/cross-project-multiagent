@@ -249,12 +249,16 @@ curl -X POST \
 
 ---
 
-## Cleanup & Resource Teardown
+## Cleanup & Resource Teardown (GAPIC Force-Deletion)
 
-During redeployments, active child sessions can cause standard Vertex AI SDK deletion to fail with `400 Bad Request` errors. To prevent this and avoid quota exhaustion, the deployment scripts (`deploy_sellers_adk.py` and `deploy_concierge_adk.py`) automatically invoke `cleanup_old_deployments.py` using GAPIC force-deletion (`force=True`).
+### Why GAPIC Force-Deletion is Required
+When iterating on Reasoning Engines on Vertex AI Agent Engine, agents accumulate active child sessions, conversation memory, and execution bindings. 
+* **The Limitation**: Standard high-level Python SDK deletion (`ReasoningEngine.delete()`) checks for active child dependencies. If any attached sessions or child resources exist, the API rejects deletion with a **`400 Bad Request`** error.
+* **The Solution**: GAPIC force-deletion (`DeleteReasoningEngineRequest(force=True)` via `ReasoningEngineServiceClient`) bypasses high-level wrappers and instructs the Vertex AI control plane to **forcefully cascade-terminate all attached child sessions and dependent runtime states** alongside the Reasoning Engine container. This prevents quota exhaustion and abandoned container runtimes.
 
-If you want to manually purge stale Reasoning Engine deployments at any time, run:
-
-```bash
-uv run python cleanup_old_deployments.py --project=$PROJECT_ID --region=$REGION
-```
+### Automated & Manual Cleanup
+1. **Automatic**: Both deployment scripts (`deploy_sellers_adk.py` and `deploy_concierge_adk.py`) automatically invoke `cleanup_old_deployments.py` prior to provisioning new engines.
+2. **Manual Teardown**: You can purge stale Reasoning Engine deployments at any time by running:
+   ```bash
+   uv run python cleanup_old_deployments.py --project=$PROJECT_ID --region=$REGION
+   ```
