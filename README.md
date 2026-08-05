@@ -62,7 +62,37 @@ Before an agent can be discovered in the Agent Registry or communicated with via
 * **Capabilities & Skills**: Specific tools and actions supported (e.g., `create_burger_order`).
 * **Endpoint URL**: Where the agent is hosted (`url=...`).
 
-### 4. Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway Routing
+### 4. How Autodiscovery Works in Code
+Inside `purchasing_agent.py`, the `before_agent_callback` hook queries the regional Agent Registry upon initialization:
+
+```python
+from google.adk.integrations.agent_registry import AgentRegistry
+
+registry = AgentRegistry(project_id=project, location=location)
+response = registry.list_agents()
+
+for agent in response.get("agents", []):
+    display_name = agent.get("displayName")
+    runtime_ref = agent.get("adkAgentDefinition", {}).get("provisionedReasoningEngine", {}).get("reasoningEngine")
+    
+    stream_url = None
+    for proto in agent.get("protocols", []):
+        for iface in proto.get("interfaces", []):
+            if "streamQuery" in iface.get("url", ""):
+                stream_url = iface.get("url")
+
+    if display_name and runtime_ref:
+        if "burger" in display_name.lower():
+            self.agent_ids["burger_seller_agent"] = runtime_ref
+            self.agent_urls["burger_seller_agent"] = stream_url
+        elif "pizza" in display_name.lower():
+            self.agent_ids["pizza_seller_agent"] = runtime_ref
+            self.agent_urls["pizza_seller_agent"] = stream_url
+```
+
+This guarantees that if specialist agent endpoints are redeployed or scaled, the purchasing concierge automatically resolves their latest resource identifiers without requiring manual code updates.
+
+### 5. Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway Routing
 Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust multi-agent communication by routing all inter-agent calls through the user-supplied **Agent Gateway** using SPIFFE/mTLS managed machine identities.
 
 #### Summary of IAM Permissions and Roles Used
@@ -118,7 +148,7 @@ uv sync
 
 ## Deployment Guide (Agent Gateway Routing)
 
-Both the seller agents and the purchasing concierge are deployed with Agent Identity and configured to route all inter-agent requests through the **Agent Gateway**. You can specify a custom Agent Gateway via the `--gateway-name` flag (defaulting to `megatron`).
+Both the seller agents and the purchasing concierge are deployed with Agent Identity and configured to route all inter-agent requests through the **Agent Gateway**. You can specify a custom Agent Gateway via the `--gateway-name` and `--region` flags.
 
 Export your GCP configuration variables:
 ```bash
@@ -145,39 +175,6 @@ uv run python deploy_concierge_adk.py \
   --region=$REGION \
   --gateway-name=$GATEWAY_NAME
 ```
-
----
-
-## How Autodiscovery Works with Agent Registry
-
-Inside `purchasing_agent.py`, the `before_agent_callback` hook queries the regional Agent Registry upon initialization:
-
-```python
-from google.adk.integrations.agent_registry import AgentRegistry
-
-registry = AgentRegistry(project_id=project, location=location)
-response = registry.list_agents()
-
-for agent in response.get("agents", []):
-    display_name = agent.get("displayName")
-    runtime_ref = agent.get("adkAgentDefinition", {}).get("provisionedReasoningEngine", {}).get("reasoningEngine")
-    
-    stream_url = None
-    for proto in agent.get("protocols", []):
-        for iface in proto.get("interfaces", []):
-            if "streamQuery" in iface.get("url", ""):
-                stream_url = iface.get("url")
-
-    if display_name and runtime_ref:
-        if "burger" in display_name.lower():
-            self.agent_ids["burger_seller_agent"] = runtime_ref
-            self.agent_urls["burger_seller_agent"] = stream_url
-        elif "pizza" in display_name.lower():
-            self.agent_ids["pizza_seller_agent"] = runtime_ref
-            self.agent_urls["pizza_seller_agent"] = stream_url
-```
-
-This guarantees that if specialist agent endpoints are redeployed or scaled, the purchasing concierge automatically resolves their latest resource identifiers without requiring manual code updates.
 
 ---
 
