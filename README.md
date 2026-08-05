@@ -177,14 +177,15 @@ This guarantees that if specialist agent endpoints are redeployed or scaled, the
 
 ## Testing & Validation via curl (REST API)
 
-Set your authentication token and deployed resource identifiers:
+Instead of manually copying resource IDs, you can dynamically resolve and export your deployed Reasoning Engine IDs using the provided helper script [`get_active_endpoints.py`](file:///usr/local/google/home/deepakmichael/.gemini/jetski/scratch/multiagent-a2a/get_active_endpoints.py):
+
 ```bash
-export TOKEN=$(gcloud auth print-access-token)
 export PROJECT_ID="your-gcp-project-id"
 export REGION="us-central1"
-export CONCIERGE_ENGINE_ID="your-concierge-engine-id"
-export BURGER_ENGINE_ID="your-burger-engine-id"
-export PIZZA_ENGINE_ID="your-pizza-engine-id"
+export TOKEN=$(gcloud auth print-access-token)
+
+# Automatically export CONCIERGE_ENGINE_ID, BURGER_ENGINE_ID, and PIZZA_ENGINE_ID
+eval $(python3 get_active_endpoints.py --project=$PROJECT_ID --region=$REGION)
 ```
 
 ### 1. Validate Purchasing Concierge (Root Agent)
