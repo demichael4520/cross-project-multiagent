@@ -177,15 +177,33 @@ This guarantees that if specialist agent endpoints are redeployed or scaled, the
 
 ## Testing & Validation via curl (REST API)
 
-Instead of manually copying resource IDs, you can dynamically resolve and export your deployed Reasoning Engine IDs using the provided helper script [`get_active_endpoints.py`](file:///usr/local/google/home/deepakmichael/.gemini/jetski/scratch/multiagent-a2a/get_active_endpoints.py):
+To dynamically resolve your deployed Reasoning Engine IDs without hardcoding them, query the Vertex AI Reasoning Engines REST API using `curl` and `jq`:
 
 ```bash
+export TOKEN=$(gcloud auth print-access-token)
 export PROJECT_ID="your-gcp-project-id"
 export REGION="us-central1"
-export TOKEN=$(gcloud auth print-access-token)
 
-# Automatically export CONCIERGE_ENGINE_ID, BURGER_ENGINE_ID, and PIZZA_ENGINE_ID
-eval $(python3 get_active_endpoints.py --project=$PROJECT_ID --region=$REGION)
+# Fetch reasoning engines metadata JSON
+ENGINES_JSON=$(curl -s -X GET \
+  -H "Authorization: Bearer $TOKEN" \
+  "https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines")
+
+# Extract Engine IDs dynamically
+export CONCIERGE_ENGINE_ID=$(echo $ENGINES_JSON | jq -r '.reasoningEngines[] | select(.displayName=="purchasing-concierge-adk") | .name' | awk -F'/' '{print $NF}' | head -n 1)
+export BURGER_ENGINE_ID=$(echo $ENGINES_JSON | jq -r '.reasoningEngines[] | select(.displayName=="burger-seller-agent-adk") | .name' | awk -F'/' '{print $NF}' | head -n 1)
+export PIZZA_ENGINE_ID=$(echo $ENGINES_JSON | jq -r '.reasoningEngines[] | select(.displayName=="pizza-seller-agent-adk") | .name' | awk -F'/' '{print $NF}' | head -n 1)
+
+echo "CONCIERGE_ENGINE_ID=$CONCIERGE_ENGINE_ID"
+echo "BURGER_ENGINE_ID=$BURGER_ENGINE_ID"
+echo "PIZZA_ENGINE_ID=$PIZZA_ENGINE_ID"
+```
+
+#### Example Output:
+```text
+CONCIERGE_ENGINE_ID=7831884546567045120
+BURGER_ENGINE_ID=6363711068044263424
+PIZZA_ENGINE_ID=5174760766418452480
 ```
 
 ### 1. Validate Purchasing Concierge (Root Agent)
