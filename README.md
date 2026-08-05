@@ -177,6 +177,12 @@ This guarantees that if specialist agent endpoints are redeployed or scaled, the
 
 ## Testing & Validation via curl (REST API)
 
+> **Why use `curl` (or SDK scripts) instead of the Cloud Console Web Playground?**
+> * **Multi-Agent A2A Orchestration**: The Web Playground is designed primarily for single-agent exploratory testing. In this multi-agent architecture, the root Purchasing Concierge orchestrates downstream calls across isolated Reasoning Engine runtimes, requiring precise multi-runtime context and session propagation.
+> * **Precise Payload & Schema Control**: Direct REST/`curl` requests give developers exact control over structured JSON payloads (such as nested `input`, `message`, `user_id`, and `session_id`), preventing `400 Bad Request` errors caused by generic Web UI input framing.
+> * **IAM, IAP, & Authentication Context**: CLI and REST calls execute using Application Default Credentials (ADC) or OAuth tokens (`gcloud auth print-access-token`), completely bypassing browser-level CORS policies, corporate proxy limits, or Identity-Aware Proxy (IAP) UI blocks.
+> * **Automation & CI/CD Readiness**: `curl` commands and REST endpoints can be seamlessly embedded into automated test suites and CI/CD pipelines.
+
 To dynamically resolve your deployed Reasoning Engine IDs without hardcoding them, query the Vertex AI Reasoning Engines REST API using `curl` and `jq`:
 
 ```bash
