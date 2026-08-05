@@ -19,8 +19,12 @@ def delete_old_deployments(project: str, region: str, keep_display_names: list[s
                     print(f"Keeping latest deployment for {eng.display_name}: {eng.name}")
                     seen.add(eng.display_name)
                     continue
+                else:
+                    print(f"Deleting older duplicate deployment: {eng.name} ({eng.display_name})")
+            else:
+                print(f"Skipping unrecognized/other reasoning engine: {eng.name} ({eng.display_name})")
+                continue
             
-            print(f"Deleting unused/old deployment: {eng.name} ({eng.display_name})")
             try:
                 op = client.delete_reasoning_engine(request=DeleteReasoningEngineRequest(name=eng.name, force=True))
                 op.result()

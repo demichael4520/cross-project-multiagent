@@ -257,10 +257,10 @@ When iterating on Reasoning Engines on Vertex AI Agent Engine, agents accumulate
 * **The Solution**: GAPIC force-deletion (`DeleteReasoningEngineRequest(force=True)` via `ReasoningEngineServiceClient`) bypasses high-level wrappers and instructs the Vertex AI control plane to **forcefully cascade-terminate all attached child sessions and dependent runtime states** alongside the Reasoning Engine container. This prevents quota exhaustion and abandoned container runtimes.
 
 ### What the Cleanup Script Deletes vs. Preserves (`cleanup_old_deployments.py`)
-* **Preserved**: The **single most recent (latest)** deployment for each core agent (`purchasing-concierge-adk`, `burger-seller-agent-adk`, `pizza-seller-agent-adk`).
-* **Purged**: 
-  1. Older stale iterations and previous duplicate versions of those core agents.
-  2. Any unrecognized Reasoning Engines in the project and region whose display names do not match the core agent names.
+* **Preserved**: 
+  1. The **single most recent (latest)** deployment for each core agent (`purchasing-concierge-adk`, `burger-seller-agent-adk`, `pizza-seller-agent-adk`).
+  2. **All other unrecognized or unrelated Reasoning Engines** in the project/region (safely skipped and left completely untouched).
+* **Purged**: Only older stale iterations and previous duplicate versions of the core managed agents (`purchasing-concierge-adk`, `burger-seller-agent-adk`, `pizza-seller-agent-adk`).
 
 ### Automated & Manual Cleanup Execution
 1. **Automatic**: Both deployment scripts (`deploy_sellers_adk.py` and `deploy_concierge_adk.py`) automatically invoke `cleanup_old_deployments.py` prior to provisioning new engines.
