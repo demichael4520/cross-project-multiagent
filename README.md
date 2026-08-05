@@ -74,13 +74,7 @@ Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust m
 | `aiplatform.reasoningEngines.query` / `streamQuery` | Reasoning Engine Runtimes | Authenticated Agent Principals | Enables execution of reasoning engine methods. |
 
 ### 5. Robust Lifecycle & Cleanup (GAPIC Force-Deletion)
-During redeployments, active child sessions can cause Vertex AI SDK deletion to fail with `400 Bad Request` errors. To prevent this and avoid quota exhaustion, deployment scripts (`deploy_sellers_adk.py` and `deploy_concierge_adk.py`) automatically invoke `cleanup_old_deployments.py` using GAPIC force-deletion (`force=True`).
-
-You can also run it manually at any time to purge stale reasoning engines:
-```bash
-uv run python cleanup_old_deployments.py --project=$PROJECT_ID --region=$REGION
-```
-
+Utilizes GAPIC force-deletion (`force=True`) to purge active child sessions during redeployments, preventing `400 Bad Request` errors and avoiding resource quota exhaustion.
 
 ---
 
@@ -180,10 +174,10 @@ This guarantees that if specialist agent endpoints are redeployed or scaled, the
 ## Testing & Validation via curl (REST API)
 
 > **Why use `curl` (or SDK scripts) instead of the Cloud Console Web Playground?**
-> * **Multi-Agent A2A Orchestration**: The Web Playground is designed primarily for single-agent exploratory testing. In this multi-agent architecture, the root Purchasing Concierge orchestrates downstream calls across isolated Reasoning Engine runtimes, requiring precise multi-runtime context and session propagation.
-> * **Precise Payload & Schema Control**: Direct REST/`curl` requests give developers exact control over structured JSON payloads (such as nested `input`, `message`, `user_id`, and `session_id`), preventing `400 Bad Request` errors caused by generic Web UI input framing.
-> * **IAM, IAP, & Authentication Context**: CLI and REST calls execute using Application Default Credentials (ADC) or OAuth tokens (`gcloud auth print-access-token`), completely bypassing browser-level CORS policies, corporate proxy limits, or Identity-Aware Proxy (IAP) UI blocks.
-> * **Automation & CI/CD Readiness**: `curl` commands and REST endpoints can be seamlessly embedded into automated test suites and CI/CD pipelines.
+> * **Multi-Agent A2A Orchestration**: The Web Playground is designed for single-agent exploratory testing, whereas multi-agent architectures require multi-runtime context and session propagation across isolated containers.
+> * **Precise Payload & Schema Control**: Direct `curl` requests provide exact control over structured JSON payloads (nested `input`, `message`, `user_id`, and `session_id`), avoiding `400 Bad Request` schema validation errors from generic web UI framing.
+> * **IAM, IAP, & Authentication Context**: CLI and REST requests execute using Application Default Credentials (ADC) or OAuth tokens (`gcloud auth print-access-token`), completely bypassing browser CORS policies, corporate proxy limits, or Identity-Aware Proxy (IAP) UI blocks.
+> * **Automation & CI/CD Readiness**: REST endpoints and `curl` commands can be seamlessly embedded into automated test suites and CI/CD pipelines.
 
 To dynamically resolve your deployed Reasoning Engine IDs without hardcoding them, query the Vertex AI Reasoning Engines REST API using `curl` and `jq`:
 
@@ -254,4 +248,16 @@ curl -X POST \
       "user_id": "test_user"
     }
   }'
+```
+
+---
+
+## Cleanup & Resource Teardown
+
+During redeployments, active child sessions can cause standard Vertex AI SDK deletion to fail with `400 Bad Request` errors. To prevent this and avoid quota exhaustion, the deployment scripts (`deploy_sellers_adk.py` and `deploy_concierge_adk.py`) automatically invoke `cleanup_old_deployments.py` using GAPIC force-deletion (`force=True`).
+
+If you want to manually purge stale Reasoning Engine deployments at any time, run:
+
+```bash
+uv run python cleanup_old_deployments.py --project=$PROJECT_ID --region=$REGION
 ```
