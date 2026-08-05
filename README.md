@@ -49,9 +49,30 @@ sequenceDiagram
 
 ## Prerequisites
 
-* A Google Cloud Project with Vertex AI API enabled.
-* Google Cloud SDK (`gcloud`) installed and authenticated.
-* [uv](https://github.com/astral-sh/uv) installed for fast Python dependency management.
+Before deploying and running multi-agent workflows, ensure the following prerequisites are set up in your GCP environment:
+
+1. **Google Cloud Project & CLI**: A Google Cloud Project with Vertex AI API enabled and `gcloud` installed and authenticated (`gcloud auth login`).
+2. **Python & uv**: [uv](https://github.com/astral-sh/uv) installed for fast Python dependency management.
+3. **Agent Gateway**: An active Agent Gateway configured in your target region (e.g. named `megatron`).
+4. **Core Google APIs Endpoint Service Registration**: Register core Google APIs and services in the Agent Registry so that agents can route requests securely:
+
+```bash
+export REGION="us-central1"
+
+gcloud agent-registry services create core-gapi-services \
+  --location=${REGION} \
+  --display-name="gapi.core.services" \
+  --description="core apis and services" \
+  --endpoint-spec-type=no-spec \
+  --interfaces=protocolBinding=JSONRPC,url=https://telemetry.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://telemetry.mtls.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://cloudresourcemanager.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://iamcredentials.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://iamcredentials.mtls.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://agentregistry.googleapis.com
+```
 
 ---
 
