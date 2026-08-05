@@ -10,10 +10,10 @@ from cleanup_old_deployments import delete_old_deployments
 
 def main():
     parser = argparse.ArgumentParser(description="Deploy Purchasing Concierge with Agent Identity and Agent Gateway")
-    parser.add_argument("--project", default="deepakmichael-svc3", help="Google Cloud Project ID")
+    parser.add_argument("--project", required=True, help="Google Cloud Project ID")
     parser.add_argument("--region", default="us-central1", help="Vertex AI Region")
     parser.add_argument("--staging-bucket", help="GCS bucket for staging")
-    parser.add_argument("--gateway-name", default="megatron", help="Agent Gateway name")
+    parser.add_argument("--gateway-name", required=True, help="Agent Gateway name")
     args = parser.parse_args()
 
     staging_bucket = args.staging_bucket or f"gs://{args.project}-staging"

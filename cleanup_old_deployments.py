@@ -37,7 +37,7 @@ def delete_old_deployments(project: str, region: str, keep_display_names: list[s
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Cleanup unused Reasoning Engines")
-    parser.add_argument("--project", default="deepakmichael-svc3", help="Google Cloud Project ID")
+    parser.add_argument("--project", required=True, help="Google Cloud Project ID")
     parser.add_argument("--region", default="us-central1", help="Vertex AI Region")
     args = parser.parse_args()
     delete_old_deployments(args.project, args.region, ["burger-seller-agent-adk", "pizza-seller-agent-adk", "purchasing-concierge-adk"])
