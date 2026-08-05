@@ -73,9 +73,6 @@ Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust m
 | `roles/aiplatform.viewer` | Reasoning Engines | Agent SPIFFE Principals | Allows reading reasoning engine resource metadata and health status. |
 | `aiplatform.reasoningEngines.query` / `streamQuery` | Reasoning Engine Runtimes | Authenticated Agent Principals | Enables execution of reasoning engine methods. |
 
-### 5. Robust Lifecycle & Cleanup (GAPIC Force-Deletion)
-Utilizes GAPIC force-deletion (`force=True`) to purge active child sessions during redeployments, preventing `400 Bad Request` errors and avoiding resource quota exhaustion.
-
 ---
 
 ## Prerequisites
