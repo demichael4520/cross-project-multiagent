@@ -40,10 +40,42 @@ sequenceDiagram
 
 ## Key Features & Best Practices
 
-1. **Decoupled Multi-Runtime Isolation**: Root orchestrators and specialist seller agents execute in separate Reasoning Engine containers on Vertex AI Agent Engine.
-2. **Dynamic Autodiscovery via Agent Registry**: Instead of relying solely on hardcoded IDs, agents query `google.adk.integrations.agent_registry.AgentRegistry` at runtime to discover deployed agent definitions, protocols, and stream endpoints.
-3. **Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway**: Integrates SPIFFE/mTLS managed machine identities and Agent Gateway routing for enterprise-grade policy governance and zero-trust multi-agent communication.
-4. **Robust Lifecycle & Cleanup**: Includes automated cleanup scripts (`cleanup_old_deployments.py`) using GAPIC force-deletion (`force=True`) to handle attached child sessions and prevent quota exhaustion.
+### 1. Decoupled Multi-Runtime Isolation
+Root orchestrators and specialist seller agents execute in separate Reasoning Engine containers on Vertex AI Agent Engine, ensuring clean architectural boundaries and independent scalability.
+
+### 2. Dynamic Autodiscovery via Agent Registry (The "Corporate Phone Directory" Analogy)
+Think of the **Agent Registry** as a **Corporate Phone Directory** or **Yellow Pages** for AI agents. 
+When your main manager agent (the **Purchasing Concierge**) wakes up:
+* **The Challenge**: It needs to know who its team members are (the **Burger Seller Agent** and **Pizza Seller Agent**) and what their direct extension numbers (Reasoning Engine resource IDs) are, without hardcoding them.
+* **How ADK Helps**: The **Agent Development Kit (ADK)** provides a built-in phone book lookup tool (`AgentRegistry`).
+* **The Lookup**: The Concierge asks Google Cloud: *"Hey, who is registered in my project?"*
+* **The Response**: The directory replies with a list of agents, their names (`burger_seller_agent`, `pizza_seller_agent`), and their cloud addresses.
+* **Ready for Action**: The Concierge saves these addresses so that whenever a customer asks for a burger or pizza, it immediately knows exactly who to call.
+
+### 3. Agent Cards (`AgentCard`): Subagent Profiles
+Before an agent can be discovered in the Agent Registry or communicated with via A2A protocols, it publishes an **Agent Card** (`AgentCard`). An Agent Card acts as the digital business card or resume of a subagent, defining:
+* **Identity**: Name and version (`name="burger_seller_agent"`, `version="1.0.0"`).
+* **Description**: What the agent does (so the LLM knows when to delegate to it).
+* **Capabilities & Skills**: Specific tools and actions supported (e.g., `create_burger_order`).
+* **Endpoint URL**: Where the agent is hosted (`url=...`).
+
+### 4. Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway IAM
+Integrates SPIFFE/mTLS managed machine identities and Agent Gateway routing for enterprise-grade policy governance and zero-trust multi-agent communication.
+
+#### Summary of IAM Permissions and Roles Used
+| Role / Permission | Target Resource | Principal / Subject | Purpose |
+| :--- | :--- | :--- | :--- |
+| `roles/iap.egressor` | Agent Registry Agent Resource | Purchasing Concierge SPIFFE Principal | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to subagent runtimes. |
+| `roles/aiplatform.agentContextEditor` | Seller Reasoning Engines | Purchasing Concierge SPIFFE Principal | Allows the Concierge to invoke, query, and pass conversation context to downstream subagents. |
+| `roles/aiplatform.viewer` | Seller Reasoning Engines | Purchasing Concierge SPIFFE Principal | Allows reading reasoning engine resource metadata and health status. |
+| `aiplatform.reasoningEngines.query` / `streamQuery` | Reasoning Engine Runtimes | Authenticated Agent Principals | Enables execution of reasoning engine methods. |
+
+### 5. Robust Lifecycle & Cleanup (GAPIC Force-Deletion)
+Includes automated cleanup scripts (`cleanup_old_deployments.py`) using GAPIC force-deletion (`force=True`) to handle attached child sessions and prevent quota exhaustion:
+```python
+request = aip.DeleteReasoningEngineRequest(name=instance.resource_name, force=True)
+client.delete_reasoning_engine(request=request)
+```
 
 ---
 
