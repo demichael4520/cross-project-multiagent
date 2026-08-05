@@ -74,11 +74,13 @@ Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust m
 | `aiplatform.reasoningEngines.query` / `streamQuery` | Reasoning Engine Runtimes | Authenticated Agent Principals | Enables execution of reasoning engine methods. |
 
 ### 5. Robust Lifecycle & Cleanup (GAPIC Force-Deletion)
-Includes automated cleanup scripts (`cleanup_old_deployments.py`) using GAPIC force-deletion (`force=True`) to handle attached child sessions and prevent quota exhaustion:
-```python
-request = aip.DeleteReasoningEngineRequest(name=instance.resource_name, force=True)
-client.delete_reasoning_engine(request=request)
+During redeployments, active child sessions can cause Vertex AI SDK deletion to fail with `400 Bad Request` errors. To prevent this and avoid quota exhaustion, deployment scripts (`deploy_sellers_adk.py` and `deploy_concierge_adk.py`) automatically invoke `cleanup_old_deployments.py` using GAPIC force-deletion (`force=True`).
+
+You can also run it manually at any time to purge stale reasoning engines:
+```bash
+uv run python cleanup_old_deployments.py --project=$PROJECT_ID --region=$REGION
 ```
+
 
 ---
 

@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv("seller_agents.env")
 load_dotenv()
+from cleanup_old_deployments import delete_old_deployments
 
 def main():
     parser = argparse.ArgumentParser(description="Deploy Purchasing Concierge with Agent Identity and Agent Gateway")
@@ -24,6 +25,9 @@ def main():
         location=args.region,
         staging_bucket=staging_bucket,
     )
+
+    print("Cleaning up old unused purchasing concierge deployments...")
+    delete_old_deployments(args.project, args.region, ["purchasing-concierge-adk"])
 
     client = vertexai.Client(
         project=args.project,
