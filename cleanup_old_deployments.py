@@ -38,6 +38,6 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Cleanup unused Reasoning Engines")
     parser.add_argument("--project", required=True, help="Google Cloud Project ID")
-    parser.add_argument("--region", default="us-central1", help="Vertex AI Region")
+    parser.add_argument("--region", required=True, help="Google Cloud Region")
     args = parser.parse_args()
     delete_old_deployments(args.project, args.region, ["burger-seller-agent-adk", "pizza-seller-agent-adk", "purchasing-concierge-adk"])

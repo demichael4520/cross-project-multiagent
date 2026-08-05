@@ -10,7 +10,7 @@ load_dotenv()
 def main():
     parser = argparse.ArgumentParser(description="Deploy Remote Seller Agents with Agent Identity and Agent Gateway")
     parser.add_argument("--project", required=True, help="Google Cloud Project ID")
-    parser.add_argument("--region", default="us-central1", help="Vertex AI Region")
+    parser.add_argument("--region", required=True, help="Google Cloud Region")
     parser.add_argument("--staging-bucket", help="GCS bucket for staging")
     parser.add_argument("--gateway-name", required=True, help="Agent Gateway name")
     args = parser.parse_args()
