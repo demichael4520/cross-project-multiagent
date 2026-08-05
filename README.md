@@ -13,6 +13,7 @@ sequenceDiagram
     autonumber
     actor Client as User / Client
     participant Concierge as Purchasing Concierge (Root Agent)
+    participant Gateway as Agent Gateway (Router)
     participant Registry as Agent Registry
     participant Burger as Burger Seller Agent
     participant Pizza as Pizza Seller Agent
@@ -24,11 +25,13 @@ sequenceDiagram
     Client->>Concierge: query("I want to order 1 burger and 2 pizzas")
     activate Concierge
     
-    par Delegate to Burger Agent
-        Concierge->>Burger: stream_query("Order 1 classic cheeseburger", session_id)
+    par Route via Gateway to Burger Agent
+        Concierge->>Gateway: stream_query() via Agent Gateway
+        Gateway->>Burger: Forward request with SPIFFE mTLS identity
         Burger-->>Concierge: Returns Order ID & Summary
-    and Delegate to Pizza Agent
-        Concierge->>Pizza: stream_query("Order 2 pepperoni pizzas", session_id)
+    and Route via Gateway to Pizza Agent
+        Concierge->>Gateway: stream_query() via Agent Gateway
+        Gateway->>Pizza: Forward request with SPIFFE mTLS identity
         Pizza-->>Concierge: Returns Order ID & Summary
     end
 
@@ -59,15 +62,15 @@ Before an agent can be discovered in the Agent Registry or communicated with via
 * **Capabilities & Skills**: Specific tools and actions supported (e.g., `create_burger_order`).
 * **Endpoint URL**: Where the agent is hosted (`url=...`).
 
-### 4. Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway IAM
-Integrates SPIFFE/mTLS managed machine identities and Agent Gateway routing for enterprise-grade policy governance and zero-trust multi-agent communication.
+### 4. Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway Routing
+Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust multi-agent communication by routing all inter-agent calls through the user-supplied **Agent Gateway** using SPIFFE/mTLS managed machine identities.
 
 #### Summary of IAM Permissions and Roles Used
 | Role / Permission | Target Resource | Principal / Subject | Purpose |
 | :--- | :--- | :--- | :--- |
-| `roles/iap.egressor` | Agent Registry Agent Resource | Purchasing Concierge SPIFFE Principal | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to subagent runtimes. |
-| `roles/aiplatform.agentContextEditor` | Seller Reasoning Engines | Purchasing Concierge SPIFFE Principal | Allows the Concierge to invoke, query, and pass conversation context to downstream subagents. |
-| `roles/aiplatform.viewer` | Seller Reasoning Engines | Purchasing Concierge SPIFFE Principal | Allows reading reasoning engine resource metadata and health status. |
+| `roles/iap.egressor` | Agent Registry Agent Resource | Agent SPIFFE Principals | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to agent runtimes. |
+| `roles/aiplatform.agentContextEditor` | Reasoning Engines | Agent SPIFFE Principals | Allows agents to invoke, query, and pass conversation context. |
+| `roles/aiplatform.viewer` | Reasoning Engines | Agent SPIFFE Principals | Allows reading reasoning engine resource metadata and health status. |
 | `aiplatform.reasoningEngines.query` / `streamQuery` | Reasoning Engine Runtimes | Authenticated Agent Principals | Enables execution of reasoning engine methods. |
 
 ### 5. Robust Lifecycle & Cleanup (GAPIC Force-Deletion)
@@ -85,7 +88,7 @@ Before deploying and running multi-agent workflows, ensure the following prerequ
 
 1. **Google Cloud Project & CLI**: A Google Cloud Project with Vertex AI API enabled and `gcloud` installed and authenticated (`gcloud auth login`).
 2. **Python & uv**: [uv](https://github.com/astral-sh/uv) installed for fast Python dependency management.
-3. **Agent Gateway**: An active Agent Gateway configured in your target region (e.g. named `megatron`).
+3. **Agent Gateway**: An active Agent Gateway configured in your target region (e.g. named via `--gateway-name` or `${GATEWAY_NAME}`).
 4. **Core Google APIs Endpoint Service Registration**: Register core Google APIs and services in the Agent Registry so that agents can route requests securely:
 
 ```bash
@@ -120,25 +123,34 @@ uv sync
 
 ---
 
-## Deployment Guide
+## Deployment Guide (Agent Gateway Routing)
+
+Both the seller agents and the purchasing concierge are deployed with Agent Identity and configured to route all inter-agent requests through the **Agent Gateway**. You can specify a custom Agent Gateway via the `--gateway-name` flag (defaulting to `megatron`).
 
 Export your GCP configuration variables:
 ```bash
 export PROJECT_ID="your-gcp-project-id"
 export REGION="us-central1"
+export GATEWAY_NAME="megatron"
 ```
 
 ### Step 1: Deploy Seller Agents
-Deploy both the Burger and Pizza seller agents to Agent Runtime with Agent Identity:
+Deploy both the Burger and Pizza seller agents to Agent Runtime, binding them to the Agent Gateway and Agent Identity:
 ```bash
-uv run python deploy_sellers_adk.py --project=$PROJECT_ID --region=$REGION
+uv run python deploy_sellers_adk.py \
+  --project=$PROJECT_ID \
+  --region=$REGION \
+  --gateway-name=$GATEWAY_NAME
 ```
-This script deploys the specialist agents and saves their resource references to `seller_agents.env`.
+This script deploys the specialist agents, configures their Agent Gateway routing, and saves their resource references to `seller_agents.env`.
 
 ### Step 2: Deploy Purchasing Concierge (Root Agent)
-Deploy the root orchestrator, configuring it with the Agent Gateway and Agent Registry autodiscovery capabilities:
+Deploy the root orchestrator, configuring it with the same Agent Gateway for secure A2A egress routing and Agent Registry autodiscovery capabilities:
 ```bash
-uv run python deploy_concierge_adk.py --project=$PROJECT_ID --region=$REGION
+uv run python deploy_concierge_adk.py \
+  --project=$PROJECT_ID \
+  --region=$REGION \
+  --gateway-name=$GATEWAY_NAME
 ```
 
 ---
