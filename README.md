@@ -161,7 +161,20 @@ response = registry.list_agents()
 for agent in response.get("agents", []):
     display_name = agent.get("displayName")
     runtime_ref = agent.get("adkAgentDefinition", {}).get("provisionedReasoningEngine", {}).get("reasoningEngine")
-    # Dynamically maps display names and reasoning engine resource IDs
+    
+    stream_url = None
+    for proto in agent.get("protocols", []):
+        for iface in proto.get("interfaces", []):
+            if "streamQuery" in iface.get("url", ""):
+                stream_url = iface.get("url")
+
+    if display_name and runtime_ref:
+        if "burger" in display_name.lower():
+            self.agent_ids["burger_seller_agent"] = runtime_ref
+            self.agent_urls["burger_seller_agent"] = stream_url
+        elif "pizza" in display_name.lower():
+            self.agent_ids["pizza_seller_agent"] = runtime_ref
+            self.agent_urls["pizza_seller_agent"] = stream_url
 ```
 
 This guarantees that if specialist agent endpoints are redeployed or scaled, the purchasing concierge automatically resolves their latest resource identifiers without requiring manual code updates.
