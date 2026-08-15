@@ -1,5 +1,5 @@
 [project]
-name = "multiagent-a2a"
+name = "cross-project-multiagent"
 version = "1.0.0"
 description = "Multi-Agent Purchasing Concierge on Vertex AI Agent Runtime (ADK)"
 requires-python = ">=3.11,<3.13"

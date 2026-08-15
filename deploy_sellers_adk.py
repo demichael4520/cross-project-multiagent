@@ -13,7 +13,10 @@ def main():
     parser.add_argument("--region", required=True, help="Google Cloud Region")
     parser.add_argument("--staging-bucket", help="GCS bucket for staging")
     parser.add_argument("--gateway-name", required=True, help="Agent Gateway name")
+    parser.add_argument("--gateway-project", help="Agent Gateway project ID (defaults to --project)")
     args = parser.parse_args()
+
+    gateway_project = args.gateway_project or args.project
 
     staging_bucket = args.staging_bucket or f"gs://{args.project}-staging"
     if not staging_bucket.startswith("gs://"):
@@ -134,7 +137,7 @@ def main():
         "identity_type": "AGENT_IDENTITY",
         "agent_gateway_config": {
             "agent_to_anywhere_config": {
-                "agent_gateway": f"projects/{args.project}/locations/{args.region}/agentGateways/{args.gateway_name}"
+                "agent_gateway": f"projects/{gateway_project}/locations/{args.region}/agentGateways/{args.gateway_name}"
             }
         },
         "env_vars": {
