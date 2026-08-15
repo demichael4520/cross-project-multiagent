@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import os
+os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 from google.cloud.aiplatform_v1 import ReasoningEngineServiceClient, DeleteReasoningEngineRequest
 
 def delete_old_deployments(project: str, region: str, keep_display_names: list[str] = None):

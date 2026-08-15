@@ -1,6 +1,9 @@
 #!/usr/init/env python3
 import os
 import argparse
+import os
+os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 import vertexai
 from vertexai.preview import reasoning_engines
 
