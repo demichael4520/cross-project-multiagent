@@ -201,8 +201,8 @@ duration: 10
 
 Deploy the centralized Agent Gateway (`centralized-agw`) in `AGENT_TO_ANYWHERE` egress mode inside the `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` project.
 
-### Step 1: Define Gateway Configuration Manifest
-Create `agw-centralized.yaml` with Custom IAP Authorization configuration:
+### Step 1: Define Centralized Agent Gateway Manifest
+Create `agw-centralized.yaml` for egress traffic governance:
 
 ```bash
 cat <<EOF > agw-centralized.yaml
@@ -213,31 +213,60 @@ googleManaged:
   governedAccessPath: AGENT_TO_ANYWHERE
 registries:
   - projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}
-authorizationPolicy:
-  iapConfig:
-    enabled: true
 EOF
 
-# Deploy Centralized Agent Gateway
+# Import Centralized Agent Gateway
 gcloud alpha network-services agent-gateways import ${GATEWAY_NAME} \
   --project=${GOOGLE_CLOUD_PROJECT_GOVERNANCE} \
   --location=${REGION} \
   --source=agw-centralized.yaml
 ```
 
-### Step 2: Configure Custom IAP Authorization Extension (DRY_RUN Mode)
-When rolling out new Agent Gateway access control policies, security administrators can configure custom IAP Authorization extensions in **`DRY_RUN`** (audit-only) mode. `DRY_RUN` mode evaluates IAP IAM policies (`roles/iap.egressor`) and generates Cloud Logging audit entries without blocking active agent communication:
+### Step 2: Create Custom IAP Authorization Extension (DRY_RUN Mode)
+Following the official [Delegate Authorization for Agent Gateway](https://docs.cloud.google.com/agent-platform/docs/agent-gateway/delegate-authorization) specification, create a Service Extension (`authzExtensions`) that delegates request authorization to Identity-Aware Proxy (`iap.googleapis.com`).
+
+Set `iamEnforcementMode: "DRY_RUN"` during initial deployment to evaluate IAP policies in audit-only mode:
 
 ```bash
-cat <<EOF > agw-iap-authz-dryrun.yaml
-name: centralized-agw-authz-ext
+cat <<EOF > iap-authz-extension.yaml
+name: iap-authz-extension
 service: iap.googleapis.com
 failOpen: true
 timeout: 1s
 metadata:
   iapPolicyVersion: "V1"
-  iamEnforcementMode: "DRY_RUN"  # Evaluates IAP policies and writes audit logs without dropping traffic
+  iamEnforcementMode: "DRY_RUN"  # Evaluates IAP policies and writes audit logs without dropping live traffic
 EOF
+
+# Import Authorization Extension
+gcloud service-extensions authz-extensions import iap-authz-extension \
+  --project=${GOOGLE_CLOUD_PROJECT_GOVERNANCE} \
+  --location=${REGION} \
+  --source=iap-authz-extension.yaml
+```
+
+### Step 3: Bind Authorization Policy to Agent Gateway
+Create a Network Security Authorization Policy (`authzPolicies`) with `policyProfile: REQUEST_AUTHZ` that attaches the IAP authorization extension directly to your target Agent Gateway resource:
+
+```bash
+cat <<EOF > authz-policy-request.yaml
+name: centralized-agw-authz-policy
+target:
+  resources:
+    - "projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}/agentGateways/${GATEWAY_NAME}"
+policyProfile: REQUEST_AUTHZ
+action: CUSTOM
+customProvider:
+  authzExtension:
+    resources:
+      - "projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}/authzExtensions/iap-authz-extension"
+EOF
+
+# Import Authorization Policy
+gcloud network-security authz-policies import centralized-agw-authz-policy \
+  --project=${GOOGLE_CLOUD_PROJECT_GOVERNANCE} \
+  --location=${REGION} \
+  --source=authz-policy-request.yaml
 ```
 
 > [!TIP]
@@ -246,7 +275,7 @@ EOF
 
 ---
 
-### Step 3: Grant Cross-Project Access to Runtime Service Agents
+### Step 4: Grant Cross-Project Access to Runtime Service Agents
 The Vertex AI service agents in both runtime projects (`$GOOGLE_CLOUD_PROJECT_CONCIERGE` and `$GOOGLE_CLOUD_PROJECT_SELLERS`) require cross-project IAM permissions to inspect the Agent Gateway in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`:
 
 ```bash
