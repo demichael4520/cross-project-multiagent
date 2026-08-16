@@ -7,6 +7,10 @@ This Codelab explores enterprise cross-project **Agent-to-Agent (A2A)** governan
 
 In a multi-tenant enterprise architecture across **three projects**, agents run in isolated runtime projects while requiring centralized governance, fine-grained access control, and dynamic service discovery.
 
+> [!NOTE]
+> **Architecture Best Practice Note**:
+> In production enterprise deployments, using a **Shared VPC** with Private Service Connect (PSC) network attachments is the recommended method for Agent Centralization to enforce private network boundary isolation. However, the primary goal of this codelab is to demonstrate **cross-project governance, Identity-Aware Proxy (IAP) access control policies, and dynamic Agent Registry auto-discovery**. To focus on governance without networking overhead, this codelab uses a streamlined 3-project setup.
+
 ```
 +---------------------------------------------------+---------------------------------------------------+
 |                                                   |                                                   |
