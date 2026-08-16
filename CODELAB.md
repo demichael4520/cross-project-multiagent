@@ -202,7 +202,7 @@ duration: 10
 Deploy the centralized Agent Gateway (`centralized-agw`) in `AGENT_TO_ANYWHERE` egress mode inside the `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` project.
 
 ### Step 1: Define Gateway Configuration Manifest
-Create `agw-centralized.yaml`:
+Create `agw-centralized.yaml` with Custom IAP Authorization configuration:
 
 ```bash
 cat <<EOF > agw-centralized.yaml
@@ -213,6 +213,9 @@ googleManaged:
   governedAccessPath: AGENT_TO_ANYWHERE
 registries:
   - projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}
+authorizationPolicy:
+  iapConfig:
+    enabled: true
 EOF
 
 # Deploy Centralized Agent Gateway
@@ -222,7 +225,28 @@ gcloud alpha network-services agent-gateways import ${GATEWAY_NAME} \
   --source=agw-centralized.yaml
 ```
 
-### Step 2: Grant Cross-Project Access to Runtime Service Agents
+### Step 2: Configure Custom IAP Authorization Extension (DRY_RUN Mode)
+When rolling out new Agent Gateway access control policies, security administrators can configure custom IAP Authorization extensions in **`DRY_RUN`** (audit-only) mode. `DRY_RUN` mode evaluates IAP IAM policies (`roles/iap.egressor`) and generates Cloud Logging audit entries without blocking active agent communication:
+
+```bash
+cat <<EOF > agw-iap-authz-dryrun.yaml
+name: centralized-agw-authz-ext
+service: iap.googleapis.com
+failOpen: true
+timeout: 1s
+metadata:
+  iapPolicyVersion: "V1"
+  iamEnforcementMode: "DRY_RUN"  # Evaluates IAP policies and writes audit logs without dropping traffic
+EOF
+```
+
+> [!TIP]
+> **Why Start in DRY_RUN Mode?**:
+> Using `iamEnforcementMode: "DRY_RUN"` allows platform security teams to validate that agent SPIFFE identities (`principal://iam.googleapis.com/...`) match expected resource bindings before switching `iamEnforcementMode` to active enforcement (`ENFORCE`).
+
+---
+
+### Step 3: Grant Cross-Project Access to Runtime Service Agents
 The Vertex AI service agents in both runtime projects (`$GOOGLE_CLOUD_PROJECT_CONCIERGE` and `$GOOGLE_CLOUD_PROJECT_SELLERS`) require cross-project IAM permissions to inspect the Agent Gateway in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`:
 
 ```bash
