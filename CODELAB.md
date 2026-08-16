@@ -1,22 +1,13 @@
-# Governance for Cross-Project Agent-to-Agent (A2A) Communication with Agent Gateway, Agent Registry, and Shared VPC
+# Governance for Cross-Project Agent-to-Agent (A2A) Communication with Agent Gateway and Agent Registry
 
 ## 1. Introduction
 duration: 5
 
-This Codelab explores enterprise cross-project **Agent-to-Agent (A2A)** governance and dynamic autodiscovery using **Gemini Enterprise Agent Platform** components: **Agent Gateway**, **Agent Registry**, **Agent Identity**, and **Shared VPC Private Service Connect (PSC)**.
+This Codelab explores enterprise cross-project **Agent-to-Agent (A2A)** governance and dynamic autodiscovery using **Gemini Enterprise Agent Platform** components: **Agent Gateway**, **Agent Registry**, and **Agent Identity**.
 
-In a multi-tenant enterprise architecture, agents run across isolated runtime projects while requiring centralized governance, fine-grained access control, and dynamic service discovery.
+In a multi-tenant enterprise architecture across **three projects**, agents run in isolated runtime projects while requiring centralized governance, fine-grained access control, and dynamic service discovery.
 
 ```
-                  +-------------------------------------------------------------------+
-                  |                   SHARED VPC HOST PROJECT                         |
-                  |                (dev-host-project-505021)                          |
-                  |  +-------------------------------------------------------------+  |
-                  |  |  Shared VPC (spvpc-network) / Subnet / PSC Network Attachment |  |
-                  |  +-------------------------------------------------------------+  |
-                  +-------------------------------------------------------------------+
-                                                    ^
-                                                    | (Private Network Attachment)
 +---------------------------------------------------+---------------------------------------------------+
 |                                                   |                                                   |
 |   PURCHASING RUNTIME PROJECT                      |               SELLER RUNTIME PROJECT              |
@@ -49,7 +40,6 @@ In a multi-tenant enterprise architecture, agents run across isolated runtime pr
 
 ### What you build
 In this codelab, you will:
-- Set up network infrastructure on a **Shared VPC** (`dev-host-project-505021`) using Private Service Connect (PSC) attachments.
 - Deploy a **Centralized Agent Gateway** (`centralized-agw`) in `AGENT_TO_ANYWHERE` egress mode in `centralized-governance-project`.
 - Deploy specialist **Burger Seller Agent** and **Pizza Seller Agent** in the `agent-runtime2` project.
 - Deploy the **Purchasing Concierge Agent** in the `agent-runtime1` project.
@@ -61,7 +51,7 @@ In this codelab, you will:
 
 ### What you learn
 - How to configure cross-project service agent IAM permissions for centralized gateways.
-- How to route Vertex AI Agent Runtime egress through a central Agent Gateway across Shared VPC networks.
+- How to route Vertex AI Agent Runtime egress through a central Agent Gateway across multi-project environments.
 - How to use SPIFFE-based **Agent Identity** (`types.IdentityType.AGENT_IDENTITY`) for fine-grained governance.
 - How to manually register agents in Agent Registry (`gcloud agent-registry services create ... --agent-spec-type=no-spec`).
 - How to configure IAP Egress policies on Agent Registry resources using `gcloud beta iap web add-iam-policy-binding` with `--agent` resource scope.
@@ -72,29 +62,23 @@ In this codelab, you will:
 duration: 5
 
 ### Environment Variables
-To make this codelab completely portable and reusable across environments, we define variable names for all project IDs, regions, and resources. **Do not hardcode project IDs or regions.**
+To make this codelab completely portable and reusable across environments, we define variable names for all project IDs, regions, and resources across the **three required projects**. **Do not hardcode project IDs or regions.**
 
 Set the environment variables in your terminal:
 
 ```bash
-# 1. Shared VPC Host Project
-export HOST_PROJECT_ID="dev-host-project-505021"
-
-# 2. Centralized Governance Project (Gateway & Registry)
+# 1. Centralized Governance Project (Gateway & Registry)
 export GOOGLE_CLOUD_PROJECT_GOVERNANCE="centralized-governance-project"
 
-# 3. Concierge Runtime Project (Purchasing Concierge Agent)
+# 2. Concierge Runtime Project (Purchasing Concierge Agent)
 export GOOGLE_CLOUD_PROJECT_CONCIERGE="agent-runtime1"
 
-# 4. Sellers Runtime Project (Burger & Pizza Seller Agents)
+# 3. Sellers Runtime Project (Burger & Pizza Seller Agents)
 export GOOGLE_CLOUD_PROJECT_SELLERS="agent-runtime2"
 
-# 5. Regional & Gateway Settings
+# 4. Regional & Gateway Settings
 export REGION="us-central1"
 export GATEWAY_NAME="centralized-agw"
-export NETWORK_NAME="spvpc-network"
-export SUBNET_NAME="agw-subnet"
-export ATTACHMENT_NAME="agw-psc-attachment"
 ```
 
 ### Get Project Numbers
@@ -180,39 +164,7 @@ gcloud beta iap web add-iam-policy-binding \
 
 ---
 
-## 3. Configure Shared VPC and Private Service Connect
-duration: 10
-
-Agent Gateway in `googleManaged` egress mode connects to target networks using Private Service Connect (PSC) Network Attachments.
-
-### Step 1: Create Subnet and PSC Network Attachment in Shared VPC
-In the Shared VPC host project (`$HOST_PROJECT_ID`), create a dedicated `/28` subnet for Agent Gateway egress and create a PSC Network Attachment with `ACCEPT_AUTOMATIC`:
-
-```bash
-# Create Subnet for PSC Attachment
-gcloud compute networks subnets create $SUBNET_NAME \
-  --project=$HOST_PROJECT_ID \
-  --network=$NETWORK_NAME \
-  --region=$REGION \
-  --range=10.100.0.0/28
-
-# Create PSC Network Attachment
-gcloud compute network-attachments create $ATTACHMENT_NAME \
-  --project=$HOST_PROJECT_ID \
-  --region=$REGION \
-  --subnets=$SUBNET_NAME \
-  --connection-preference=ACCEPT_AUTOMATIC
-```
-
-### Step 2: Retrieve Network Attachment Resource Path
-```bash
-export NETWORK_ATTACHMENT_PATH="projects/$HOST_PROJECT_ID/regions/$REGION/networkAttachments/$ATTACHMENT_NAME"
-echo "PSC Attachment Path: $NETWORK_ATTACHMENT_PATH"
-```
-
----
-
-## 4. Deploy Centralized Agent Gateway
+## 3. Deploy Centralized Agent Gateway
 duration: 10
 
 Deploy the centralized Agent Gateway (`centralized-agw`) in `AGENT_TO_ANYWHERE` egress mode inside the `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` project.
@@ -229,9 +181,6 @@ googleManaged:
   governedAccessPath: AGENT_TO_ANYWHERE
 registries:
   - projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}
-networkConfig:
-  egress:
-    networkAttachment: ${NETWORK_ATTACHMENT_PATH}
 EOF
 
 # Deploy Centralized Agent Gateway
@@ -265,7 +214,7 @@ gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT_GOVERNANCE \
 
 ---
 
-## 5. Deploy Seller Agents to agent-runtime2
+## 4. Deploy Seller Agents to agent-runtime2
 duration: 15
 
 Deploy both the **Burger Seller Agent** and **Pizza Seller Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_SELLERS` (`agent-runtime2`). Both deployments will specify the centralized gateway (`centralized-agw` in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) and attach `types.IdentityType.AGENT_IDENTITY`.
@@ -298,7 +247,7 @@ echo "Pizza Engine ID:  $PIZZA_ENGINE_ID"
 
 ---
 
-## 6. Deploy Purchasing Concierge Agent to agent-runtime1
+## 5. Deploy Purchasing Concierge Agent to agent-runtime1
 duration: 10
 
 Deploy the **Purchasing Concierge Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` (`agent-runtime1`).
@@ -328,7 +277,7 @@ echo "Concierge Engine ID: $CONCIERGE_ENGINE_ID"
 
 ---
 
-## 7. Manually Register Agents in Central Agent Registry
+## 6. Manually Register Agents in Central Agent Registry
 duration: 10
 
 Register all three agents (`burger-seller-agent`, `pizza-seller-agent`, and `purchasing-concierge-adk`) in the **Central Agent Registry** in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
@@ -431,6 +380,8 @@ The REST API returns the list of registered services, their display names, and t
     }
   ]
 }
+```
+
 The Purchasing Concierge parses `services[].displayName` and `services[].interfaces[0].url` to map `burger_seller_agent` and `pizza_seller_agent` dynamically at runtime using the following Python logic:
 
 ```python
@@ -464,7 +415,7 @@ self.agent_ids.update(discovered_agents)
 
 ---
 
-## 8. Configure Access Control Policies (Allow Burger / Block Pizza)
+## 7. Configure Access Control Policies (Allow Burger / Block Pizza)
 duration: 10
 
 Agent Gateway uses **Identity-Aware Proxy (IAP)** to evaluate authorization decisions. Agent Gateway operates under a **Default Deny** security posture.
@@ -529,7 +480,7 @@ gcloud beta iap web get-iam-policy \
 
 ---
 
-## 9. Test and Verify Governance Policies via Cloud Logging
+## 8. Test and Verify Governance Policies via Cloud Logging
 duration: 15
 
 Now verify cross-project A2A communication, inspect Cloud Logging for policy decisions, update policies dynamically, and observe the policy state changes.
@@ -700,7 +651,7 @@ curl -X POST \
 
 ---
 
-## 10. Clean Up
+## 9. Clean Up
 duration: 5
 
 To prevent incurring ongoing charges to your Google Cloud account, delete the resources created during this Codelab.
@@ -735,30 +686,18 @@ gcloud alpha network-services agent-gateways delete $GATEWAY_NAME \
   --location=$REGION --quiet
 ```
 
-### Step 4: Delete PSC Network Attachment & Subnet
-```bash
-gcloud compute network-attachments delete $ATTACHMENT_NAME \
-  --project=$HOST_PROJECT_ID \
-  --region=$REGION --quiet
-
-gcloud compute networks subnets delete $SUBNET_NAME \
-  --project=$HOST_PROJECT_ID \
-  --region=$REGION --quiet
-```
-
 ---
 
-## 11. Congratulations!
+## 10. Congratulations!
 duration: 1
 
-You have successfully built, deployed, and governed a multi-project **Agent-to-Agent (A2A)** architecture on Google Cloud using **Agent Gateway**, **Agent Registry**, **Agent Identity**, and **Shared VPC Private Service Connect**.
+You have successfully built, deployed, and governed a multi-project **Agent-to-Agent (A2A)** architecture on Google Cloud across three projects using **Agent Gateway**, **Agent Registry**, and **Agent Identity**.
 
 ### What you accomplished:
-- Configured cross-project Shared VPC networking and Private Service Connect attachments.
-- Built a centralized **Agent Gateway** (`centralized-agw`) in `AGENT_TO_ANYWHERE` mode.
-- Deployed Concierge in `agent-runtime1` and Seller Agents in `agent-runtime2`.
+- Built a centralized **Agent Gateway** (`centralized-agw`) in `AGENT_TO_ANYWHERE` mode in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
+- Deployed Concierge in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` (`agent-runtime1`) and Seller Agents in `$GOOGLE_CLOUD_PROJECT_SELLERS` (`agent-runtime2`).
 - Manually registered all three agents in **Central Agent Registry** (`gcloud agent-registry services create ... --agent-spec-type=no-spec`).
+- Demonstrated dynamic **Agent Registry REST API Auto-Discovery** from the Purchasing Concierge.
 - Enforced **IAP Egress Governance Policies** using `gcloud beta iap web add-iam-policy-binding` with `--agent` resource flags:
-  - **ALLOWED** Concierge -> Burger Agent.
-  - **BLOCKED** Concierge -> Pizza Agent with HTTP `403 Forbidden`.
-- Verified policy enforcement live using REST calls.
+  - Validated initial **403 Forbidden** denial and inspected audit logs in Cloud Logging.
+  - Applied access policy and verified **200 OK** approval and granted audit logs.
