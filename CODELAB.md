@@ -1,7 +1,6 @@
 # Governance for Cross-Project Agent-to-Agent (A2A) Communication with Agent Gateway and Agent Registry
 
 ## 1. Introduction
-duration: 5
 
 This Codelab explores enterprise cross-project **Agent-to-Agent (A2A)** governance and dynamic autodiscovery using **Gemini Enterprise Agent Platform** components: **Agent Gateway**, **Agent Registry**, and **Agent Identity**.
 
@@ -63,7 +62,6 @@ In this codelab, you will:
 ---
 
 ## 2. Setup and Requirements
-duration: 5
 
 ### Google Cloud Project Setup
 To complete this codelab, you need **3 Google Cloud projects** with billing enabled. If you need to create new Google Cloud projects, follow the official documentation:
@@ -197,7 +195,6 @@ gcloud beta iap web add-iam-policy-binding \
 ---
 
 ## 3. Deploy Centralized Agent Gateway
-duration: 10
 
 Deploy the centralized Agent Gateway (`centralized-agw`) in `AGENT_TO_ANYWHERE` egress mode inside the `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` project.
 
@@ -300,7 +297,6 @@ gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT_GOVERNANCE \
 ---
 
 ## 4. Deploy Seller Agents to agent-runtime2
-duration: 15
 
 Deploy both the **Burger Seller Agent** and **Pizza Seller Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_SELLERS` (`agent-runtime2`). Both deployments will specify the centralized gateway (`centralized-agw` in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) and attach `types.IdentityType.AGENT_IDENTITY`.
 
@@ -356,7 +352,6 @@ curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" \
 ---
 
 ## 5. Deploy Purchasing Concierge Agent to agent-runtime1
-duration: 10
 
 Deploy the **Purchasing Concierge Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` (`agent-runtime1`).
 
@@ -408,7 +403,6 @@ curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" \
 ---
 
 ## 6. Manually Register Agents in Central Agent Registry
-duration: 10
 
 Register all three agents (`burger-seller-agent`, `pizza-seller-agent`, and `purchasing-concierge-adk`) in the **Central Agent Registry** in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
 
@@ -546,7 +540,6 @@ self.agent_ids.update(discovered_agents)
 ---
 
 ## 7. Configure Access Control Policies (Allow Burger / Block Pizza)
-duration: 10
 
 Agent Gateway uses **Identity-Aware Proxy (IAP)** to evaluate authorization decisions. Agent Gateway operates under a **Default Deny** security posture.
 
@@ -611,7 +604,6 @@ gcloud beta iap web get-iam-policy \
 ---
 
 ## 8. Test and Verify Governance Policies via Cloud Logging
-duration: 15
 
 Now verify cross-project A2A communication, inspect Cloud Logging for policy decisions, update policies dynamically, and observe the policy state changes.
 
@@ -881,7 +873,6 @@ Expected audit log entry showing `"granted": true` for the Burger Agent resource
 ---
 
 ## 9. Clean Up
-duration: 5
 
 To prevent incurring ongoing charges to your Google Cloud account, delete the resources created during this Codelab.
 
@@ -918,7 +909,6 @@ gcloud alpha network-services agent-gateways delete $GATEWAY_NAME \
 ---
 
 ## 10. Congratulations!
-duration: 1
 
 You have successfully built, deployed, and governed a multi-project **Agent-to-Agent (A2A)** architecture on Google Cloud across three projects using **Agent Gateway**, **Agent Registry**, and **Agent Identity**.
 
