@@ -155,6 +155,29 @@ gcloud agent-registry services create core-gapi-services \
   --interfaces=protocolBinding=JSONRPC,url=https://agentregistry.googleapis.com
 ```
 
+### Grant Egress Access for Core Google APIs Endpoint
+Grant organization-wide (or project-wide) `roles/iap.egressor` permissions so that all agents routing through Agent Gateway can communicate with core Google APIs:
+
+```bash
+# 1. Get Organization ID
+export ORGANIZATION_ID=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_GOVERNANCE --format="value(parent.id)")
+
+# 2. Extract core-gapi-services Endpoint ID
+export CORE_GAPI_ENDPOINT_ID=$(gcloud agent-registry services describe core-gapi-services \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --location=$REGION \
+  --format="value(registryResource)" | awk -F'/' '{print $NF}')
+
+# 3. Grant IAP Egressor Policy
+gcloud beta iap web add-iam-policy-binding \
+  --resource-type=agent-registry \
+  --endpoint=$CORE_GAPI_ENDPOINT_ID \
+  --region=$REGION \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --role="roles/iap.egressor" \
+  --member="principalSet://agents.global.org-${ORGANIZATION_ID}.system.id.goog/*"
+```
+
 ---
 
 ## 3. Configure Shared VPC and Private Service Connect
