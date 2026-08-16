@@ -1,14 +1,22 @@
+id: governance-cross-project-a2a-agent-gateway
+summary: Governance for Cross-Project Agent-to-Agent (A2A) Communication with Agent Gateway, Agent Registry, and Identity-Aware Proxy
+categories: vertex-ai, ai-agents, governance
+environments: Web
+status: Published
+feedback link: https://github.com/demichael4520/cross-project-multiagent/issues
+author: Google Cloud
+
 # Governance for Cross-Project Agent-to-Agent (A2A) Communication with Agent Gateway and Agent Registry
 
 ## 1. Introduction
+duration: 5
 
 This Codelab explores enterprise cross-project **Agent-to-Agent (A2A)** governance and dynamic autodiscovery using **Gemini Enterprise Agent Platform** components: **Agent Gateway**, **Agent Registry**, and **Agent Identity**.
 
 In a multi-tenant enterprise architecture across **three projects**, agents run in isolated runtime projects while requiring centralized governance, fine-grained access control, and dynamic service discovery.
 
-> [!NOTE]
-> **Architecture Best Practice Note**:
-> In production enterprise deployments, using a **Shared VPC** with Private Service Connect (PSC) network attachments is the recommended method for Agent Centralization to enforce private network boundary isolation. However, the primary goal of this codelab is to demonstrate **cross-project governance, Identity-Aware Proxy (IAP) access control policies, and dynamic Agent Registry auto-discovery**. To focus on governance without networking overhead, this codelab uses a streamlined 3-project setup.
+Positive
+: **Architecture Best Practice Note**: In production enterprise deployments, using a **Shared VPC** with Private Service Connect (PSC) network attachments is the recommended method for Agent Centralization to enforce private network boundary isolation. However, the primary goal of this codelab is to demonstrate **cross-project governance, Identity-Aware Proxy (IAP) access control policies, and dynamic Agent Registry auto-discovery**. To focus on governance without networking overhead, this codelab uses a streamlined 3-project setup.
 
 ```
 +---------------------------------------------------+---------------------------------------------------+
@@ -62,6 +70,7 @@ In this codelab, you will:
 ---
 
 ## 2. Setup and Requirements
+duration: 5
 
 ### Google Cloud Project Setup
 To complete this codelab, you need **3 Google Cloud projects** with billing enabled. If you need to create new Google Cloud projects, follow the official documentation:
@@ -178,353 +187,307 @@ gcloud agent-registry services create core-gapi-services \
 ```
 
 ### Grant Egress Access for Core Google APIs Endpoint
-Grant organization-wide (or project-wide) `roles/iap.egressor` permissions so that all agents routing through Agent Gateway can communicate with core Google APIs:
+Grant `roles/iap.egressor` to the Concierge project's Reasoning Engine SPIFFE identity on the `core-gapi-services` service so it can communicate with Vertex AI and Google APIs through the Agent Gateway:
 
 ```bash
-# 1. Get Organization ID
-export ORGANIZATION_ID=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_GOVERNANCE --format="value(parent.id)")
+export CONCIERGE_SPIFFE_WILDCARD="principal://iam.googleapis.com/projects/${PROJECT_NUMBER_CONCIERGE}/locations/${REGION}/reasoningEngines/*"
 
-# 2. Extract core-gapi-services Endpoint ID
-export CORE_GAPI_ENDPOINT_ID=$(gcloud agent-registry services describe core-gapi-services \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --location=$REGION \
-  --format="value(registryResource)" | awk -F'/' '{print $NF}')
-
-# 3. Grant IAP Egressor Policy
 gcloud beta iap web add-iam-policy-binding \
   --resource-type=agent-registry \
-  --endpoint=$CORE_GAPI_ENDPOINT_ID \
+  --service=core-gapi-services \
   --region=$REGION \
   --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
   --role="roles/iap.egressor" \
-  --member="principalSet://agents.global.org-${ORGANIZATION_ID}.system.id.goog/*"
+  --member="$CONCIERGE_SPIFFE_WILDCARD"
 ```
 
 ---
 
 ## 3. Deploy Centralized Agent Gateway
+duration: 10
 
 Deploy the centralized Agent Gateway (`centralized-agw`) in `AGENT_TO_ANYWHERE` egress mode inside the `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` project.
 
-### Step 1: Define Centralized Agent Gateway Manifest
-Create `agw-centralized.yaml` for egress traffic governance:
+### Step 1: Define Gateway Configuration Manifest
+Create `agw-centralized.yaml` for egress traffic governance with custom IAP authorization enabled:
 
-```bash
-cat <<EOF > agw-centralized.yaml
-name: ${GATEWAY_NAME}
-protocols:
-  - MCP
+```yaml
+name: projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw
 googleManaged:
   governedAccessPath: AGENT_TO_ANYWHERE
-registries:
-  - projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}
-EOF
-
-# Import Centralized Agent Gateway
-gcloud alpha network-services agent-gateways import ${GATEWAY_NAME} \
-  --project=${GOOGLE_CLOUD_PROJECT_GOVERNANCE} \
-  --location=${REGION} \
-  --source=agw-centralized.yaml
+authorizationPolicy:
+  iapConfig:
+    enabled: true
 ```
 
-### Step 2: Create Custom IAP Authorization Extension (DRY_RUN Mode)
-Following the official [Delegate Authorization for Agent Gateway](https://docs.cloud.google.com/agent-platform/docs/agent-gateway/delegate-authorization) specification, create a Service Extension (`authzExtensions`) that delegates request authorization to Identity-Aware Proxy (`iap.googleapis.com`).
+### Step 2: Define Custom IAP Authorization Extension
+Create `authz-extension.yaml` referencing `iap.googleapis.com` with `DRY_RUN` enforcement mode for testing and policy evaluation:
 
-Set `iamEnforcementMode: "DRY_RUN"` during initial deployment to evaluate IAP policies in audit-only mode:
-
-```bash
-cat <<EOF > iap-authz-extension.yaml
-name: iap-authz-extension
+```yaml
+name: projects/centralized-governance-project/locations/us-central1/authzExtensions/agw-iap-authz-extension
+authority: iap.googleapis.com
 service: iap.googleapis.com
-failOpen: true
-timeout: 1s
+timeout: 10s
+failOpen: false
 metadata:
   iapPolicyVersion: "V1"
-  iamEnforcementMode: "DRY_RUN"  # Evaluates IAP policies and writes audit logs without dropping live traffic
-EOF
-
-# Import Authorization Extension
-gcloud service-extensions authz-extensions import iap-authz-extension \
-  --project=${GOOGLE_CLOUD_PROJECT_GOVERNANCE} \
-  --location=${REGION} \
-  --source=iap-authz-extension.yaml
+  iamEnforcementMode: "DRY_RUN"
 ```
 
-### Step 3: Bind Authorization Policy to Agent Gateway
-Create a Network Security Authorization Policy (`authzPolicies`) with `policyProfile: REQUEST_AUTHZ` that attaches the IAP authorization extension directly to your target Agent Gateway resource:
+### Step 3: Define Request Authorization Policy
+Create `authz-policy.yaml` attaching the Custom Authorization Extension to the Agent Gateway:
 
-```bash
-cat <<EOF > authz-policy-request.yaml
-name: centralized-agw-authz-policy
-target:
-  resources:
-    - "projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}/agentGateways/${GATEWAY_NAME}"
+```yaml
+name: projects/centralized-governance-project/locations/us-central1/authzPolicies/agw-request-authz-policy
+targetLocations:
+  - agentGateways/centralized-agw
 policyProfile: REQUEST_AUTHZ
 action: CUSTOM
 customProvider:
-  authzExtension:
-    resources:
-      - "projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}/authzExtensions/iap-authz-extension"
-EOF
-
-# Import Authorization Policy
-gcloud network-security authz-policies import centralized-agw-authz-policy \
-  --project=${GOOGLE_CLOUD_PROJECT_GOVERNANCE} \
-  --location=${REGION} \
-  --source=authz-policy-request.yaml
+  authzExtension: projects/centralized-governance-project/locations/us-central1/authzExtensions/agw-iap-authz-extension
 ```
 
-> [!TIP]
-> **Why Start in DRY_RUN Mode?**:
-> Using `iamEnforcementMode: "DRY_RUN"` allows platform security teams to validate that agent SPIFFE identities (`principal://iam.googleapis.com/...`) match expected resource bindings before switching `iamEnforcementMode` to active enforcement (`ENFORCE`).
-
----
-
-### Step 4: Grant Cross-Project Access to Runtime Service Agents
-The Vertex AI service agents in both runtime projects (`$GOOGLE_CLOUD_PROJECT_CONCIERGE` and `$GOOGLE_CLOUD_PROJECT_SELLERS`) require cross-project IAM permissions to inspect the Agent Gateway in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`:
+### Step 4: Import Gateway Resources to Central Governance Project
+Import the Agent Gateway, Authorization Extension, and Authorization Policy using `gcloud`:
 
 ```bash
-# 1. Create Custom IAM Role in Governance Project
-gcloud iam roles create ar_agw_cross_project_sa \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --title="Runtime Agent Gateway Cross-Project SA" \
-  --description="Custom role for Runtime Service Agents to inspect Agent Gateway" \
-  --permissions="networkservices.agentGateways.get,networkservices.operations.get"
+# 1. Import Centralized Agent Gateway
+gcloud alpha network-services agent-gateways import $GATEWAY_NAME \
+  --source=agw-centralized.yaml \
+  --location=$REGION \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
 
-# 2. Grant Role to Concierge Service Agent
-gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --member="serviceAccount:service-${PROJECT_NUMBER_CONCIERGE}@gcp-sa-aiplatform.iam.gserviceaccount.com" \
-  --role="projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/roles/ar_agw_cross_project_sa"
+# 2. Import Service Extension for Custom IAP AuthZ (DRY_RUN mode)
+gcloud service-extensions authz-extensions import agw-iap-authz-extension \
+  --source=authz-extension.yaml \
+  --location=$REGION \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
 
-# 3. Grant Role to Sellers Service Agent
+# 3. Import Network Security AuthZ Policy
+gcloud network-security authz-policies import agw-request-authz-policy \
+  --source=authz-policy.yaml \
+  --location=$REGION \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
+```
+
+Verify Gateway creation:
+
+```bash
+gcloud alpha network-services agent-gateways describe $GATEWAY_NAME \
+  --location=$REGION \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
+```
+
+### Step 5: Configure Cross-Project Service Agent IAM Permissions
+For agents running in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` and `$GOOGLE_CLOUD_PROJECT_SELLERS` to route egress traffic through `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`, grant the runtime service accounts the `roles/networkservices.agentGatewayUser` role on the Centralized Gateway.
+
+```bash
+# 1. Get Vertex AI Service Agent for Concierge Project
+export CONCIERGE_SA="service-${PROJECT_NUMBER_CONCIERGE}@gcp-sa-aiplatform.iam.gserviceaccount.com"
+
+# 2. Get Vertex AI Service Agent for Sellers Project
+export SELLERS_SA="service-${PROJECT_NUMBER_SELLERS}@gcp-sa-aiplatform.iam.gserviceaccount.com"
+
+# 3. Grant Concierge SA access to Gateway in Governance Project
 gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --member="serviceAccount:service-${PROJECT_NUMBER_SELLERS}@gcp-sa-aiplatform.iam.gserviceaccount.com" \
-  --role="projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/roles/ar_agw_cross_project_sa"
+  --member="serviceAccount:${CONCIERGE_SA}" \
+  --role="roles/networkservices.agentGatewayUser"
+
+# 4. Grant Sellers SA access to Gateway in Governance Project
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --member="serviceAccount:${SELLERS_SA}" \
+  --role="roles/networkservices.agentGatewayUser"
 ```
 
 ---
 
 ## 4. Deploy Seller Agents to agent-runtime2
+duration: 15
 
 Deploy both the **Burger Seller Agent** and **Pizza Seller Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_SELLERS` (`agent-runtime2`). Both deployments will specify the centralized gateway (`centralized-agw` in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) and attach `types.IdentityType.AGENT_IDENTITY`.
 
-### Deploy Seller Agents
+### Step 1: Grant Runtime Service Account Access to Gateway
+Ensure the default compute service account in `$GOOGLE_CLOUD_PROJECT_SELLERS` has permission to use the Agent Gateway in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`:
+
 ```bash
-uv run python deploy_sellers_adk.py \
+export SELLERS_COMPUTE_SA="${PROJECT_NUMBER_SELLERS}-compute@developer.gserviceaccount.com"
+
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --member="serviceAccount:${SELLERS_COMPUTE_SA}" \
+  --role="roles/networkservices.agentGatewayUser"
+```
+
+### Step 2: Deploy Burger Seller Agent
+Deploy the Burger Agent to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_SELLERS`:
+
+```bash
+uv run python deploy_burger.py \
   --project=$GOOGLE_CLOUD_PROJECT_SELLERS \
   --region=$REGION \
-  --gateway-name=$GATEWAY_NAME \
-  --gateway-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
+  --governance-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --gateway=$GATEWAY_NAME
 ```
 
-> [!NOTE]
-> **Understanding Agent Gateway Parameter Resolution**:
-> The Python deployment script takes `--gateway-project` (`centralized-governance-project`) and `--gateway-name` (`centralized-agw`) and constructs the full Agent Gateway resource path required by the Vertex AI Agent Engine runtime:
-> `projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw`
+Note down the returned Reasoning Engine resource ID (e.g., `projects/.../locations/us-central1/reasoningEngines/BURGER_ENGINE_ID`).
 
-### Extract Reasoning Engine IDs
-Upon successful deployment, `deploy_sellers_adk.py` saves the deployed resource IDs into `seller_agents.env`:
+### Step 3: Deploy Pizza Seller Agent
+Deploy the Pizza Agent to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_SELLERS`:
 
 ```bash
-source seller_agents.env
-export BURGER_ENGINE_ID=$(echo $BURGER_SELLER_AGENT_ID | awk -F'/' '{print $NF}')
-export PIZZA_ENGINE_ID=$(echo $PIZZA_SELLER_AGENT_ID | awk -F'/' '{print $NF}')
-
-echo "Burger Engine ID: $BURGER_ENGINE_ID"
-echo "Pizza Engine ID:  $PIZZA_ENGINE_ID"
+uv run python deploy_pizza.py \
+  --project=$GOOGLE_CLOUD_PROJECT_SELLERS \
+  --region=$REGION \
+  --governance-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --gateway=$GATEWAY_NAME
 ```
 
-### Validate Seller Agents Agent Gateway Routing
-Verify that the seller agents were deployed with `AGENT_IDENTITY` and configured to route egress through the Central Agent Gateway:
+Note down the returned Reasoning Engine resource ID (e.g., `projects/.../locations/us-central1/reasoningEngines/PIZZA_ENGINE_ID`).
+
+### Step 4: Validate Agent Gateway Routing Post-Deployment
+After deploying the Seller agents, retrieve their Reasoning Engine details and verify that `agent_gateway` routing is attached:
 
 ```bash
-export AUTH_TOKEN=$(gcloud auth print-access-token)
+export BURGER_ENGINE_ID="<BURGER_ENGINE_ID>"
+export PIZZA_ENGINE_ID="<PIZZA_ENGINE_ID>"
 
-curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" \
-  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}" | jq '{
-    displayName: .displayName,
-    identityType: .spec.identityType,
-    agentGateway: .spec.deploymentSpec.agentGatewayConfig.agentToAnywhereConfig.agentGateway
-  }'
+# Inspect Burger Agent deployment
+gcloud ai reasoning-engines describe $BURGER_ENGINE_ID \
+  --project=$GOOGLE_CLOUD_PROJECT_SELLERS \
+  --location=$REGION
+
+# Inspect Pizza Agent deployment
+gcloud ai reasoning-engines describe $PIZZA_ENGINE_ID \
+  --project=$GOOGLE_CLOUD_PROJECT_SELLERS \
+  --location=$REGION
 ```
 
-#### Expected Validation Response:
-```json
-{
-  "displayName": "burger-seller-agent",
-  "identityType": "AGENT_IDENTITY",
-  "agentGateway": "projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw"
-}
-```
+Verify that the output contains the `agentGateway` configuration pointing to `projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw`.
 
 ---
 
 ## 5. Deploy Purchasing Concierge Agent to agent-runtime1
+duration: 10
 
 Deploy the **Purchasing Concierge Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` (`agent-runtime1`).
 
 ### Step 1: Deploy Concierge Agent
+Deploy the Purchasing Concierge Agent specifying the central gateway and attaching `types.IdentityType.AGENT_IDENTITY`:
+
 ```bash
-uv run python deploy_concierge_adk.py \
+uv run python deploy_concierge.py \
   --project=$GOOGLE_CLOUD_PROJECT_CONCIERGE \
   --region=$REGION \
-  --gateway-name=$GATEWAY_NAME \
-  --gateway-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
+  --governance-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --gateway=$GATEWAY_NAME
 ```
 
-> [!NOTE]
-> **Dynamic Agent Registry Auto-Discovery**:
-> The Purchasing Concierge ADK agent dynamically queries the Central Agent Registry in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (`GOVERNANCE_PROJECT_ID`) at runtime to auto-discover the registered seller agent endpoints (Pizza Seller Agent and Burger Seller Agent). This eliminates hardcoding agent resource IDs or project numbers, making seller agent discovery completely dynamic.
+Note down the returned Reasoning Engine resource ID (e.g., `projects/.../locations/us-central1/reasoningEngines/CONCIERGE_ENGINE_ID`).
 
-Extract the Concierge Reasoning Engine ID:
+### Step 2: Validate Concierge Routing
+Verify that the Concierge Agent deployment is attached to the central gateway:
+
 ```bash
-export CONCIERGE_ENGINE_ID=$(gcloud aiplatform reasoning-engines list \
+export CONCIERGE_ENGINE_ID="<CONCIERGE_ENGINE_ID>"
+
+gcloud ai reasoning-engines describe $CONCIERGE_ENGINE_ID \
   --project=$GOOGLE_CLOUD_PROJECT_CONCIERGE \
-  --region=$REGION \
-  --filter="displayName:purchasing-concierge-adk" \
-  --format="value(name)" | awk -F'/' '{print $NF}')
-
-echo "Concierge Engine ID: $CONCIERGE_ENGINE_ID"
-```
-
-### Step 2: Validate Concierge Agent Gateway Routing
-Query the Vertex AI Reasoning Engine REST API to verify that the Purchasing Concierge agent runtime is configured with `AGENT_IDENTITY` and points to the Central Agent Gateway:
-
-```bash
-curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" \
-  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}" | jq '{
-    displayName: .displayName,
-    identityType: .spec.identityType,
-    agentGateway: .spec.deploymentSpec.agentGatewayConfig.agentToAnywhereConfig.agentGateway
-  }'
-```
-
-#### Expected Validation Response:
-```json
-{
-  "displayName": "purchasing-concierge-adk",
-  "identityType": "AGENT_IDENTITY",
-  "agentGateway": "projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw"
-}
+  --location=$REGION
 ```
 
 ---
 
 ## 6. Manually Register Agents in Central Agent Registry
+duration: 10
 
 Register all three agents (`burger-seller-agent`, `pizza-seller-agent`, and `purchasing-concierge-adk`) in the **Central Agent Registry** in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
 
 Using `--agent-spec-type=no-spec` creates a Service resource that Agent Registry automatically projects as a read-only **Agent** resource under `/agents/`.
 
-### Step 1: Register Pizza Seller Agent
-```bash
-gcloud agent-registry services create pizza-seller-agent \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --location=$REGION \
-  --display-name="Pizza Seller Agent" \
-  --description="Pizza Seller Agent reasoning engine in agent-runtime2" \
-  --agent-spec-type=no-spec \
-  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${PIZZA_ENGINE_ID}"
-```
+### Step 1: Register Burger Seller Agent
+Register the Burger Agent using its Vertex AI Reasoning Engine resource URL:
 
-### Step 2: Register Burger Seller Agent
 ```bash
 gcloud agent-registry services create burger-seller-agent \
   --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
   --location=$REGION \
   --display-name="Burger Seller Agent" \
-  --description="Burger Seller Agent reasoning engine in agent-runtime2" \
-  --agent-spec-type=no-spec \
-  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}"
+  --description="Specialist agent that sells burgers and fries" \
+  --endpoint-spec-type=no-spec \
+  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}
 ```
 
-### Step 3: Register Purchasing Concierge ADK Agent
+Get the generated Agent Registry ID for the Burger Agent:
+
+```bash
+export BURGER_AGENT_ID=$(gcloud agent-registry services describe burger-seller-agent \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --location=$REGION \
+  --format="value(name)" | awk -F'/' '{print $NF}')
+echo "Burger Agent Registry ID: $BURGER_AGENT_ID"
+```
+
+### Step 2: Register Pizza Seller Agent
+Register the Pizza Agent using its Vertex AI Reasoning Engine resource URL:
+
+```bash
+gcloud agent-registry services create pizza-seller-agent \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --location=$REGION \
+  --display-name="Pizza Seller Agent" \
+  --description="Specialist agent that sells pizzas and pasta" \
+  --endpoint-spec-type=no-spec \
+  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${PIZZA_ENGINE_ID}
+```
+
+Get the generated Agent Registry ID for the Pizza Agent:
+
+```bash
+export PIZZA_AGENT_ID=$(gcloud agent-registry services describe pizza-seller-agent \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --location=$REGION \
+  --format="value(name)" | awk -F'/' '{print $NF}')
+echo "Pizza Agent Registry ID: $PIZZA_AGENT_ID"
+```
+
+### Step 3: Register Purchasing Concierge Agent
+Register the Purchasing Concierge Agent in Agent Registry:
+
 ```bash
 gcloud agent-registry services create purchasing-concierge-adk \
   --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
   --location=$REGION \
-  --display-name="Purchasing Concierge ADK" \
-  --description="Purchasing Concierge ADK reasoning engine in agent-runtime1" \
-  --agent-spec-type=no-spec \
-  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}"
+  --display-name="Purchasing Concierge Agent" \
+  --description="Orchestrator concierge agent that routes purchasing requests" \
+  --endpoint-spec-type=no-spec \
+  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_NUMBER_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}
 ```
 
-### Step 4: Extract Projected Agent Resource IDs
-List the registered Agent resources and extract their projected Agent IDs (`agentregistry-...`):
+Get the generated Agent Registry ID for the Concierge Agent:
 
 ```bash
-gcloud alpha agent-registry agents list \
+export CONCIERGE_AGENT_ID=$(gcloud agent-registry services describe purchasing-concierge-adk \
   --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
   --location=$REGION \
-  --format="table(displayName, name.basename():label=AGENT_ID, protocols[0].interfaces[0].url)"
+  --format="value(name)" | awk -F'/' '{print $NF}')
+echo "Concierge Agent Registry ID: $CONCIERGE_AGENT_ID"
 ```
 
-Extract each Agent ID for IAM policy binding:
-```bash
-export BURGER_AGENT_ID=$(gcloud alpha agent-registry agents list --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE --location=$REGION --filter="displayName='Burger Seller Agent'" --format="value(name.basename())")
-export PIZZA_AGENT_ID=$(gcloud alpha agent-registry agents list --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE --location=$REGION --filter="displayName='Pizza Seller Agent'" --format="value(name.basename())")
-export CONCIERGE_AGENT_ID=$(gcloud alpha agent-registry agents list --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE --location=$REGION --filter="displayName='Purchasing Concierge ADK'" --format="value(name.basename())")
-
-echo "Burger Projected Agent ID:    $BURGER_AGENT_ID"
-echo "Pizza Projected Agent ID:     $PIZZA_AGENT_ID"
-echo "Concierge Projected Agent ID: $CONCIERGE_AGENT_ID"
-```
-
-### Step 5: How Concierge Auto-Discovers Agents via Agent Registry REST API
-During initialization (`before_agent_callback`), the Purchasing Concierge dynamically queries the Agent Registry REST endpoint in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` to discover all registered seller agents and their mTLS endpoints without hardcoding resource IDs:
-
-```bash
-export AUTH_TOKEN=$(gcloud auth print-access-token)
-
-curl -s -H "Authorization: Bearer $AUTH_TOKEN" \
-  "https://agentregistry.googleapis.com/v1alpha/projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}/services" | jq .
-```
-
-#### Expected Auto-Discovery Response:
-The REST API returns the list of registered services, their display names, and target Reasoning Engine interface URLs:
-
-```json
-{
-  "services": [
-    {
-      "name": "projects/centralized-governance-project/locations/us-central1/services/pizza-seller-agent",
-      "displayName": "Pizza Seller Agent",
-      "description": "Pizza Seller Agent reasoning engine in agent-runtime2",
-      "interfaces": [
-        {
-          "url": "https://us-central1-aiplatform.mtls.googleapis.com/v1/projects/652324106007/locations/us-central1/reasoningEngines/3607692814046986240",
-          "protocolBinding": "JSONRPC"
-        }
-      ],
-      "registryResource": "projects/672690953426/locations/us-central1/agents/agentregistry-00000000-0000-0000-39dd-83d8c7cd59f5"
-    },
-    {
-      "name": "projects/centralized-governance-project/locations/us-central1/services/burger-seller-agent",
-      "displayName": "Burger Seller Agent",
-      "description": "Burger Seller Agent reasoning engine in agent-runtime2",
-      "interfaces": [
-        {
-          "url": "https://us-central1-aiplatform.mtls.googleapis.com/v1/projects/652324106007/locations/us-central1/reasoningEngines/744529350946193408",
-          "protocolBinding": "JSONRPC"
-        }
-      ],
-      "registryResource": "projects/672690953426/locations/us-central1/agents/agentregistry-00000000-0000-0000-4d81-517ed250cf35"
-    }
-  ]
-}
-```
-
-The Purchasing Concierge parses `services[].displayName` and `services[].interfaces[0].url` to map `burger_seller_agent` and `pizza_seller_agent` dynamically at runtime using the following Python logic:
+### Step 4: Validate Dynamic Agent Registry Auto-Discovery
+The Purchasing Concierge dynamically discovers seller agents by querying the Agent Registry REST API at runtime. The Concierge code implements the following autodiscovery logic:
 
 ```python
-# purchasing_concierge/purchasing_agent.py
-headers = {"Authorization": f"Bearer {credentials.token}"}
-url = f"https://agentregistry.googleapis.com/v1alpha/projects/{governance_project}/locations/{location}/services"
-resp = requests.get(url, headers=headers, timeout=10)
-
-discovered_agents = {}
-if resp.status_code == 200:
-    services = resp.json().get("services", [])
+def autodiscover_agent_services(self):
+    """Queries Central Agent Registry via REST API to discover seller agents."""
+    headers = {"Authorization": f"Bearer {self._get_auth_token()}"}
+    registry_url = f"https://agentregistry.googleapis.com/v1/projects/{self.governance_project}/locations/{self.region}/services"
+    
+    response = requests.get(registry_url, headers=headers)
+    if response.status_code != 200:
+        return
+        
+    services = response.json().get("services", [])
+    discovered_agents = {}
+    
     for service in services:
         display_name = service.get("displayName", "")
         interfaces = service.get("interfaces", [])
@@ -548,6 +511,7 @@ self.agent_ids.update(discovered_agents)
 ---
 
 ## 7. Configure Access Control Policies (Allow Burger / Block Pizza)
+duration: 10
 
 Agent Gateway uses **Identity-Aware Proxy (IAP)** to evaluate authorization decisions. Agent Gateway operates under a **Default Deny** security posture.
 
@@ -612,258 +576,99 @@ gcloud beta iap web get-iam-policy \
 ---
 
 ## 8. Test and Verify Governance Policies via Cloud Logging
+duration: 15
 
 Now verify cross-project A2A communication, inspect Cloud Logging for policy decisions, update policies dynamically, and observe the policy state changes.
 
-> [!IMPORTANT]
-> **Use `curl` (terminal REST API) for Validation**:
-> You **MUST** use the `curl` terminal commands below to validate communication between the Purchasing Concierge and seller agents. **Do NOT use the Vertex AI Agent Engine Playground UI** for validation, as the Playground UI executes queries under the user's browser session rather than invoking the Reasoning Engine REST `:query` endpoint directly with proper authorization tokens.
+Negative
+: **Use `curl` (terminal REST API) for Validation**: You **MUST** use the `curl` terminal commands below to validate communication between the Purchasing Concierge and seller agents. **Do NOT use the Vertex AI Agent Engine Playground UI** for validation, as the Playground UI executes queries under the user's browser session rather than invoking the Reasoning Engine REST `:query` endpoint directly with proper authorization tokens.
 
-### How the Purchasing Concierge Communicates with Remote Agents
-Before executing the test queries, understand how the REST API request flow works:
+### Cross-Project Agent-to-Agent Authorization Sequence
+The sequence diagram below illustrates how Agent Gateway and Identity-Aware Proxy enforce authorization decisions when the Concierge queries seller agents:
 
-1. **User Invocation**: The user sends a request to the Purchasing Concierge Agent in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` by invoking its Vertex AI Reasoning Engine `:query` REST endpoint via `curl`:
-   ```bash
-   curl -X POST \
-     -H "Authorization: Bearer ${AUTH_TOKEN}" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "input": {
-         "kwargs": {
-           "input": "I want to order a Margherita pizza"
-         }
-       }
-     }' \
-     "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query"
-   ```
-
-2. **Reasoning Engine Execution**: The Purchasing Concierge container receives the prompt, checks active seller agent endpoints discovered from **Agent Registry**, and uses its `send_task` tool to delegate the order to the target seller agent (e.g., Pizza Seller Agent).
-
-3. **Agent Gateway Egress Routing**: The Concierge's outbound A2A request is routed through the central **Agent Gateway** (`centralized-agw`) using the Concierge's SPIFFE **Agent Identity** (`types.IdentityType.AGENT_IDENTITY`).
-
-4. **IAP Policy Decision**: Agent Gateway evaluates the Identity-Aware Proxy (IAP) egress IAM policy on the target agent resource in **Agent Registry**:
-   - If `roles/iap.egressor` is granted: Agent Gateway forwards the mTLS request to the seller agent (`200 OK`).
-   - If no policy exists (default deny): Agent Gateway rejects the request with `403 Forbidden` (`PERMISSION_DENIED`).
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as User / Admin (curl)
-    participant Concierge as Concierge Agent<br/>(agent-runtime1)
-    participant Registry as Agent Registry<br/>(governance-project)
-    participant Gateway as Agent Gateway<br/>(centralized-agw)
-    participant Logging as Cloud Logging<br/>(governance-project)
-    participant Seller as Seller Agent<br/>(agent-runtime2)
-
-    User->>Concierge: 1. POST :query via curl
-    Note over Concierge: Parses user prompt<br/>("Order Margherita pizza")
-    Concierge->>Registry: 2. Auto-discover Seller Endpoints
-    Registry-->>Concierge: 3. Returns mTLS Reasoning Engine URLs
-    Concierge->>Gateway: 4. Delegated Task (with SPIFFE Agent Identity)
-    Note over Gateway: Evaluates IAP Egress IAM Policy<br/>(roles/iap.egressor)
-    alt IAP Policy Missing (Deny by Default)
-        Gateway->>Logging: 5a. Audit Log ("granted": false, 403)
-        Gateway-->>Concierge: 5b. 403 Forbidden (PERMISSION_DENIED)
-        Concierge-->>User: 5c. HTTP 403 Error Response
-    else IAP Policy Granted (roles/iap.egressor bound)
-        Gateway->>Logging: 6a. Audit Log ("granted": true, 200)
-        Gateway->>Seller: 6b. Forward mTLS Request
-        Seller-->>Gateway: 6c. Order Confirmation
-        Gateway-->>Concierge: 6d. 200 OK Response
-        Concierge-->>User: 6e. "I have created your order..."
-    end
+```
++---------------------+       +---------------------+       +-------------------------+       +---------------------+
+| Purchasing Concierge |       |    Agent Gateway    |       |  Identity-Aware Proxy   |       |    Seller Agent     |
+|   (agent-runtime1)  |       | (central-governance)|       |  (IAP Authorization)    |       |   (agent-runtime2)  |
++----------+----------+       +----------+----------+       +------------+------------+       +----------+----------+
+           |                             |                               |                               |
+           | 1. Query Burger Agent       |                               |                               |
+           |---------------------------->|                               |                               |
+           |                             | 2. Evaluate IAP Policy        |                               |
+           |                             |------------------------------>|                               |
+           |                             |                               |                               |
+           |                             | 3. Policy Approved (200 OK)   |                               |
+           |                             |<------------------------------|                               |
+           |                             |                               |                               |
+           |                             | 4. Forward Request to Burger  |                               |
+           |                             |-------------------------------------------------------------->|
+           |                             |                               |                               |
+           |                             | 5. Return Burger Response     |                               |
+           |                             |<--------------------------------------------------------------|
+           | 6. Return "Burger Order OK" |                               |                               |
+           |<----------------------------|                               |                               |
+           |                             |                               |                               |
+           |                             |                               |                               |
+           | 7. Query Pizza Agent        |                               |                               |
+           |---------------------------->|                               |                               |
+           |                             | 8. Evaluate IAP Policy        |                               |
+           |                             |------------------------------>|                               |
+           |                             |                               |                               |
+           |                             | 9. Policy Denied (403)        |                               |
+           |                             |<------------------------------|                               |
+           |                             |                               |                               |
+           | 10. HTTP 403 Forbidden      |                               |                               |
+           |<----------------------------|                               |                               |
+           |                             |                               |                               |
 ```
 
----
-
-### Step 1: Query Pizza Agent (Expected: BLOCKED / 403 Forbidden)
-Attempt to order a pizza through the Purchasing Concierge before granting IAP egress permissions:
+### Step 1: Query Burger Agent (Expected: SUCCESS / 200 OK)
+Obtain an authorization token and query the Purchasing Concierge Agent to order a burger:
 
 ```bash
 export AUTH_TOKEN=$(gcloud auth print-access-token)
 
 curl -X POST \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" \
   -H "Authorization: Bearer ${AUTH_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "input": {
-      "kwargs": {
-        "input": "I want to order a Margherita pizza"
-      }
+      "message": "I would like to order a double cheeseburger with extra fries."
     }
-  }' \
-  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" | jq .
+  }'
 ```
 
-#### Expected Result (Terminal):
-Agent Gateway intercepts the outbound request from Concierge to Pizza Agent, evaluates IAP authorization, finds **NO** `roles/iap.egressor` binding, and **BLOCKS** the communication with HTTP `403 Forbidden` / `PERMISSION_DENIED`:
-
-```json
-{
-  "error": {
-    "code": 403,
-    "message": "Permission denied: Agent Gateway blocked egress call to pizza-seller-agent due to IAP policy constraint.",
-    "status": "PERMISSION_DENIED"
-  }
-}
-```
-
----
-
-### Step 2: Inspect 403 Denial in Cloud Logging
-Instruct your operations team to verify the blocked request in Cloud Logging for the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`).
-
-> [!IMPORTANT]
-> **Use Central Governance Project for Cloud Logging**:
-> All Agent Gateway authorization decisions and audit logs are recorded centrally in the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE` / `centralized-governance-project`) where Agent Gateway and Agent Registry reside, rather than the runtime projects. Always check logs in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
-
-#### Option A: Using `gcloud` CLI
-Run the following command targeting the Central Governance Project:
-
-```bash
-gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --limit=5 \
-  --format="json"
-```
-
-#### Option B: Using Google Cloud Console Logs Explorer
-1. Navigate to **Logging > Logs Explorer** in the Cloud Console for `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (**Central Governance Project**).
-2. Enter the query filter:
-   ```text
-   resource.type="audited_resource"
-   protoPayload.serviceName="iap.googleapis.com"
-   protoPayload.methodName="AuthorizeUser"
-   ```
-3. Observe the audit log entry showing `granted: false` or access denied for the Pizza Agent resource.
-
----
-
-### Step 3: Grant Egress Policy for Pizza Agent (ALLOW Policy)
-Now update the IAP IAM policy on the Pizza Agent resource in Agent Registry to allow the Concierge Agent to communicate:
-
-```bash
-gcloud beta iap web add-iam-policy-binding \
-  --resource-type=agent-registry \
-  --agent=$PIZZA_AGENT_ID \
-  --region=$REGION \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --role="roles/iap.egressor" \
-  --member="$CONCIERGE_SPIFFE_PRINCIPAL"
-```
-
----
-
-### Step 4: Re-query Pizza Agent (Expected: SUCCESS / 200 OK)
-Run the exact same query command again:
-
-```bash
-curl -X POST \
-  -H "Authorization: Bearer ${AUTH_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "input": {
-      "kwargs": {
-        "input": "I want to order a Margherita pizza"
-      }
-    }
-  }' \
-  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" | jq .
-```
-
-#### Expected Result (Terminal):
-Now that the IAP policy is applied, Agent Gateway approves the egress request and returns a successful response from the Pizza Agent:
-
+Expected Output:
 ```json
 {
   "output": {
-    "output": "I have created your order for a Margherita pizza (100K) with the Pizza Seller Agent!"
+    "response": "Order placed successfully with Burger Seller Agent! Order ID: BURGER-88392. Total: $14.50"
   }
 }
 ```
 
----
+### Step 2: Query Cloud Logging for Granted Audit Logs in Central Governance Project
+In Google Cloud, IAP egress policy evaluations emit audit logs to **Cloud Logging inside the Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`).
 
-### Step 5: Verify 200 OK Approval in Cloud Logging
-Return to Cloud Logging in the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) to inspect the updated audit log.
+Query Cloud Logging in the **Central Governance Project** to view the granted authorization decision:
 
-Run the `gcloud` command targeting the Central Governance Project:
 ```bash
-gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
+gcloud logging read \
+  'logName="projects/'$GOOGLE_CLOUD_PROJECT_GOVERNANCE'/logs/cloudaudit.googleapis.com%2Fpolicy"' \
   --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --limit=5 \
+  --limit=1 \
   --format="json"
 ```
 
-#### Expected Audit Log Entry (Cloud Logging):
-You will see a new entry with `"granted": true` under `authorizationInfo`, confirming Agent Gateway successfully authorized the call:
+Expected audit log entry showing `"granted": true` for the Burger Agent resource:
 
 ```json
 {
   "protoPayload": {
     "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
     "authenticationInfo": {
-      "principalSubject": "principal://iam.googleapis.com/projects/934809438648/locations/us-central1/reasoningEngines/6780478751529500672"
-    },
-    "authorizationInfo": [
-      {
-        "granted": true,
-        "permission": "iap.webServiceVersions.egressViaIAP",
-        "resource": "projects/centralized-governance-project/locations/us-central1/agents/agentregistry-00000000-0000-0000-39dd-83d8c7cd59f5"
-      }
-    ],
-    "methodName": "AuthorizeUser",
-    "serviceName": "iap.googleapis.com"
-  }
-}
-```
-
----
-
-### Step 6: Query Burger Agent (Expected: SUCCESS / 200 OK)
-Query the Purchasing Concierge to order a Burger to confirm both agents are functioning properly:
-
-```bash
-curl -X POST \
-  -H "Authorization: Bearer ${AUTH_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "input": {
-      "kwargs": {
-        "input": "I want to order a Classic Cheeseburger"
-      }
-    }
-  }' \
-  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" | jq .
-```
-
-#### Expected Result (Terminal):
-```json
-{
-  "output": {
-    "output": "I have created your order for a Classic Cheeseburger (85K) with the Burger Seller Agent!"
-  }
-}
-```
-
-#### Verify Burger Agent 200 OK Approval in Cloud Logging:
-Inspect Cloud Logging in the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) to verify that Agent Gateway authorized the Burger Agent call:
-
-```bash
-gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --limit=2 \
-  --format="json"
-```
-
-Expected audit log entry showing `"granted": true` for the Burger Agent resource (`agentregistry-...`):
-
-```json
-{
-  "protoPayload": {
-    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
-    "authenticationInfo": {
-      "principalSubject": "principal://iam.googleapis.com/projects/934809438648/locations/us-central1/reasoningEngines/6780478751529500672"
+      "principalEmail": "principal://iam.googleapis.com/projects/111111111111/locations/us-central1/reasoningEngines/CONCIERGE_ENGINE_ID"
     },
     "authorizationInfo": [
       {
@@ -878,9 +683,139 @@ Expected audit log entry showing `"granted": true` for the Burger Agent resource
 }
 ```
 
+### Step 3: Query Pizza Agent (Expected: BLOCKED / 403 Forbidden)
+Now query the Purchasing Concierge Agent to order a pizza:
+
+```bash
+curl -X POST \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" \
+  -H "Authorization: Bearer ${AUTH_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "message": "I would like to order a large Pepperoni Pizza."
+    }
+  }'
+```
+
+Expected Output (HTTP 403 / Access Denied):
+```json
+{
+  "error": {
+    "code": 403,
+    "message": "Permission denied: Concierge SPIFFE identity is not authorized by Agent Gateway IAP egress policy to call target agent resource.",
+    "status": "PERMISSION_DENIED"
+  }
+}
+```
+
+### Step 4: Query Cloud Logging for Denied Audit Logs in Central Governance Project
+Query Cloud Logging in the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) to verify the denied authorization decision:
+
+```bash
+gcloud logging read \
+  'logName="projects/'$GOOGLE_CLOUD_PROJECT_GOVERNANCE'/logs/cloudaudit.googleapis.com%2Fpolicy"' \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --limit=1 \
+  --format="json"
+```
+
+Expected audit log entry showing `"granted": false` for the Pizza Agent resource:
+
+```json
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "authenticationInfo": {
+      "principalEmail": "principal://iam.googleapis.com/projects/111111111111/locations/us-central1/reasoningEngines/CONCIERGE_ENGINE_ID"
+    },
+    "authorizationInfo": [
+      {
+        "granted": false,
+        "permission": "iap.webServiceVersions.egressViaIAP",
+        "resource": "projects/centralized-governance-project/locations/us-central1/agents/agentregistry-00000000-0000-0000-8f92-628fd390ef11"
+      }
+    ],
+    "methodName": "AuthorizeUser",
+    "serviceName": "iap.googleapis.com"
+  }
+}
+```
+
+### Step 5: Dynamically Grant Egress Access to Pizza Agent
+Dynamically update the security policy in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` to allow the Purchasing Concierge to call the Pizza Agent:
+
+```bash
+gcloud beta iap web add-iam-policy-binding \
+  --resource-type=agent-registry \
+  --agent=$PIZZA_AGENT_ID \
+  --region=$REGION \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --role="roles/iap.egressor" \
+  --member="$CONCIERGE_SPIFFE_PRINCIPAL"
+```
+
+### Step 6: Query Pizza Agent Again (Expected: SUCCESS / 200 OK)
+Re-run the exact same pizza order request:
+
+```bash
+curl -X POST \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" \
+  -H "Authorization: Bearer ${AUTH_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "message": "I would like to order a large Pepperoni Pizza."
+    }
+  }'
+```
+
+Expected Output:
+```json
+{
+  "output": {
+    "response": "Order placed successfully with Pizza Seller Agent! Order ID: PIZZA-10492. Total: $18.99"
+  }
+}
+```
+
+### Step 7: Query Cloud Logging for Updated Granted Policy Audit Logs
+Verify in Cloud Logging inside `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` that the Pizza Agent request is now granted:
+
+```bash
+gcloud logging read \
+  'logName="projects/'$GOOGLE_CLOUD_PROJECT_GOVERNANCE'/logs/cloudaudit.googleapis.com%2Fpolicy"' \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --limit=1 \
+  --format="json"
+```
+
+Expected audit log entry showing `"granted": true` for the Pizza Agent resource:
+
+```json
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "authenticationInfo": {
+      "principalEmail": "principal://iam.googleapis.com/projects/111111111111/locations/us-central1/reasoningEngines/CONCIERGE_ENGINE_ID"
+    },
+    "authorizationInfo": [
+      {
+        "granted": true,
+        "permission": "iap.webServiceVersions.egressViaIAP",
+        "resource": "projects/centralized-governance-project/locations/us-central1/agents/agentregistry-00000000-0000-0000-8f92-628fd390ef11"
+      }
+    ],
+    "methodName": "AuthorizeUser",
+    "serviceName": "iap.googleapis.com"
+  }
+}
+```
+
 ---
 
 ## 9. Clean Up
+duration: 5
 
 To prevent incurring ongoing charges to your Google Cloud account, delete the resources created during this Codelab.
 
@@ -917,6 +852,7 @@ gcloud alpha network-services agent-gateways delete $GATEWAY_NAME \
 ---
 
 ## 10. Congratulations!
+duration: 1
 
 You have successfully built, deployed, and governed a multi-project **Agent-to-Agent (A2A)** architecture on Google Cloud across three projects using **Agent Gateway**, **Agent Registry**, and **Agent Identity**.
 
