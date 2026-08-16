@@ -70,6 +70,14 @@ To complete this codelab, you need **3 Google Cloud projects** with billing enab
 
 Ensure your Google Cloud user account or service account has `roles/owner` or `roles/resourcemanager.organizationAdmin` + `roles/iam.securityAdmin` across all 3 projects.
 
+### Get the Codelab Source Code
+In Google Cloud Shell or your local terminal, clone the codelab repository and navigate to the project directory:
+
+```bash
+git clone https://github.com/demichael4520/cross-project-multiagent.git
+cd cross-project-multiagent
+```
+
 ### Project Mapping Reference
 This codelab spans **3 standalone Google Cloud projects**. Refer to this table to know exactly which project to run each command against:
 
