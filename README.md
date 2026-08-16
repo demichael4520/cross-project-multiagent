@@ -1,10 +1,8 @@
-# Multi-Agent Purchasing Concierge on Vertex AI Agent Runtime (ADK)
+# Multi-Agent Purchasing Concierge on Agent Runtime (ADK)
 
 This project implements a secure, multi-agent purchasing concierge system deployed on **Vertex AI Agent Runtime (Reasoning Engines)** using the Google **Agent Development Kit (ADK)** and **Agent Identity / Agent Gateway**.
 
 It demonstrates **A2A (Agent-to-Agent) Multi-Runtime Orchestration** with **Dynamic Autodiscovery via Agent Registry**, allowing coordinating root agents to discover and delegate tasks to specialist agents across isolated Reasoning Engine runtimes.
-
-> 📖 **Looking for the step-by-step hands-on guide?** Check out [CODELAB.md](CODELAB.md) for complete instructions on cross-project Shared VPC, Agent Gateway setup, Agent Registry manual registration, and IAP Web IAM policy enforcement.
 
 ---
 
