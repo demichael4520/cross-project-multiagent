@@ -493,6 +493,32 @@ Now verify cross-project A2A communication, inspect Cloud Logging for policy dec
 > **Use `curl` (terminal REST API) for Validation**:
 > You **MUST** use the `curl` terminal commands below to validate communication between the Purchasing Concierge and seller agents. **Do NOT use the Vertex AI Agent Engine Playground UI** for validation, as the Playground UI executes queries under the user's browser session rather than invoking the Reasoning Engine REST `:query` endpoint directly with proper authorization tokens.
 
+### How the Purchasing Concierge Communicates with Remote Agents
+Before executing the test queries, understand how the REST API request flow works:
+
+1. **User Invocation**: The user sends a request to the Purchasing Concierge Agent in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` by invoking its Vertex AI Reasoning Engine `:query` REST endpoint via `curl`:
+   ```bash
+   curl -X POST \
+     -H "Authorization: Bearer ${AUTH_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "input": {
+         "kwargs": {
+           "input": "I want to order a Margherita pizza"
+         }
+       }
+     }' \
+     "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query"
+   ```
+
+2. **Reasoning Engine Execution**: The Purchasing Concierge container receives the prompt, checks active seller agent endpoints discovered from **Agent Registry**, and uses its `send_task` tool to delegate the order to the target seller agent (e.g., Pizza Seller Agent).
+
+3. **Agent Gateway Egress Routing**: The Concierge's outbound A2A request is routed through the central **Agent Gateway** (`centralized-agw`) using the Concierge's SPIFFE **Agent Identity** (`types.IdentityType.AGENT_IDENTITY`).
+
+4. **IAP Policy Decision**: Agent Gateway evaluates the Identity-Aware Proxy (IAP) egress IAM policy on the target agent resource in **Agent Registry**:
+   - If `roles/iap.egressor` is granted: Agent Gateway forwards the mTLS request to the seller agent (`200 OK`).
+   - If no policy exists (default deny): Agent Gateway rejects the request with `403 Forbidden` (`PERMISSION_DENIED`).
+
 ---
 
 ### Step 1: Query Pizza Agent (Expected: BLOCKED / 403 Forbidden)
@@ -502,15 +528,16 @@ Attempt to order a pizza through the Purchasing Concierge before granting IAP eg
 export AUTH_TOKEN=$(gcloud auth print-access-token)
 
 curl -X POST \
-  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Authorization: Bearer ${AUTH_TOKEN}" \
   -H "Content-Type: application/json" \
-  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" \
   -d '{
     "input": {
-      "message": "Order a large pepperoni pizza from the pizza agent",
-      "user_id": "codelab-user-1"
+      "kwargs": {
+        "input": "I want to order a Margherita pizza"
+      }
     }
-  }' | jq .
+  }' \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" | jq .
 ```
 
 #### Expected Result (Terminal):
