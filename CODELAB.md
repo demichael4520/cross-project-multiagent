@@ -519,6 +519,35 @@ Before executing the test queries, understand how the REST API request flow work
    - If `roles/iap.egressor` is granted: Agent Gateway forwards the mTLS request to the seller agent (`200 OK`).
    - If no policy exists (default deny): Agent Gateway rejects the request with `403 Forbidden` (`PERMISSION_DENIED`).
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User / Admin (curl)
+    participant Concierge as Concierge Agent<br/>(agent-runtime1)
+    participant Registry as Agent Registry<br/>(governance-project)
+    participant Gateway as Agent Gateway<br/>(centralized-agw)
+    participant Logging as Cloud Logging<br/>(governance-project)
+    participant Seller as Seller Agent<br/>(agent-runtime2)
+
+    User->>Concierge: 1. POST :query via curl
+    Note over Concierge: Parses user prompt<br/>("Order Margherita pizza")
+    Concierge->>Registry: 2. Auto-discover Seller Endpoints
+    Registry-->>Concierge: 3. Returns mTLS Reasoning Engine URLs
+    Concierge->>Gateway: 4. Delegated Task (with SPIFFE Agent Identity)
+    Note over Gateway: Evaluates IAP Egress IAM Policy<br/>(roles/iap.egressor)
+    alt IAP Policy Missing (Deny by Default)
+        Gateway->>Logging: 5a. Audit Log ("granted": false, 403)
+        Gateway-->>Concierge: 5b. 403 Forbidden (PERMISSION_DENIED)
+        Concierge-->>User: 5c. HTTP 403 Error Response
+    else IAP Policy Granted (roles/iap.egressor bound)
+        Gateway->>Logging: 6a. Audit Log ("granted": true, 200)
+        Gateway->>Seller: 6b. Forward mTLS Request
+        Seller-->>Gateway: 6c. Order Confirmation
+        Gateway-->>Concierge: 6d. 200 OK Response
+        Concierge-->>User: 6e. "I have created your order..."
+    end
+```
+
 ---
 
 ### Step 1: Query Pizza Agent (Expected: BLOCKED / 403 Forbidden)
