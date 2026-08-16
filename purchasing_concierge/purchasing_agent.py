@@ -94,53 +94,67 @@ Current active seller agent: {current_agent["active_agent"]}
 
     async def before_agent_callback(self, callback_context: CallbackContext):
         if not self.a2a_client_init_status:
-            project = os.getenv("AGENT_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT") or "deepakmichael-svc3"
-            location = os.getenv("AGENT_REGION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
+            governance_project = (
+                os.getenv("GOVERNANCE_PROJECT_ID")
+                or os.getenv("AGENT_GATEWAY_PROJECT_ID")
+                or "centralized-governance-project"
+            )
+            location = (
+                os.getenv("AGENT_REGION")
+                or os.getenv("GOOGLE_CLOUD_LOCATION")
+                or "us-central1"
+            )
             
+            discovered_agents = {}
             try:
-                from google.adk.integrations.agent_registry import AgentRegistry
-                registry = AgentRegistry(project_id=project, location=location)
-                response = registry.list_agents()
-                
-                discovered_agents = {}
-                discovered_urls = {}
-                for agent in response.get("agents", []):
-                    display_name = agent.get("displayName")
-                    runtime_ref = agent.get("adkAgentDefinition", {}).get("provisionedReasoningEngine", {}).get("reasoningEngine")
-                    
-                    stream_url = None
-                    for proto in agent.get("protocols", []):
-                        for iface in proto.get("interfaces", []):
-                            if "streamQuery" in iface.get("url", ""):
-                                stream_url = iface.get("url")
-                            elif "query" in iface.get("url", "") and not stream_url:
-                                stream_url = iface.get("url")
+                import google.auth
+                import google.auth.transport.requests
+                import requests
+                import re
 
-                    if display_name and runtime_ref:
-                        discovered_agents[display_name] = runtime_ref
-                        if "burger" in display_name.lower():
-                            discovered_agents["burger_seller_agent"] = runtime_ref
-                            if stream_url:
-                                discovered_urls["burger_seller_agent"] = stream_url
-                        elif "pizza" in display_name.lower():
-                            discovered_agents["pizza_seller_agent"] = runtime_ref
-                            if stream_url:
-                                discovered_urls["pizza_seller_agent"] = stream_url
+                credentials, _ = google.auth.default()
+                auth_req = google.auth.transport.requests.Request()
+                credentials.refresh(auth_req)
+
+                headers = {"Authorization": f"Bearer {credentials.token}"}
+                url = f"https://agentregistry.googleapis.com/v1alpha/projects/{governance_project}/locations/{location}/services"
+                resp = requests.get(url, headers=headers, timeout=10)
+
+                if resp.status_code == 200:
+                    services = resp.json().get("services", [])
+                    for service in services:
+                        display_name = service.get("displayName", "")
+                        name = service.get("name", "")
+                        interfaces = service.get("interfaces", [])
+                        
+                        if not interfaces:
+                            continue
+                            
+                        target_url = interfaces[0].get("url", "")
+                        re_match = re.search(r"(projects/\d+/locations/[^/]+/reasoningEngines/\d+)", target_url)
+                        resource_path = re_match.group(1) if re_match else target_url
+
+                        combined_str = f"{display_name} {name}".lower()
+                        if "burger" in combined_str:
+                            discovered_agents["burger_seller_agent"] = resource_path
+                            discovered_agents["burger-seller-agent-adk"] = resource_path
+                        elif "pizza" in combined_str:
+                            discovered_agents["pizza_seller_agent"] = resource_path
+                            discovered_agents["pizza-seller-agent-adk"] = resource_path
 
                 if discovered_agents:
                     self.agent_ids.update(discovered_agents)
-                if discovered_urls:
-                    self.agent_urls.update(discovered_urls)
             except Exception as e:
-                print(f"Warning: Failed to query Agent Registry in project {project}: {e}")
+                print(f"Warning: Failed to auto-discover agents from Agent Registry in project {governance_project}: {e}")
 
-            burger_id = os.getenv("BURGER_SELLER_AGENT_ID") or "projects/933480738993/locations/us-central1/reasoningEngines/6363711068044263424"
-            self.agent_ids["burger_seller_agent"] = burger_id
-            self.agent_ids["burger-seller-agent-adk"] = burger_id
+            # Fallback to environment variables if present (no hardcoded defaults)
+            if "burger_seller_agent" not in self.agent_ids and os.getenv("BURGER_SELLER_AGENT_ID"):
+                self.agent_ids["burger_seller_agent"] = os.getenv("BURGER_SELLER_AGENT_ID")
+                self.agent_ids["burger-seller-agent-adk"] = os.getenv("BURGER_SELLER_AGENT_ID")
 
-            pizza_id = os.getenv("PIZZA_SELLER_AGENT_ID") or "projects/933480738993/locations/us-central1/reasoningEngines/5174760766418452480"
-            self.agent_ids["pizza_seller_agent"] = pizza_id
-            self.agent_ids["pizza-seller-agent-adk"] = pizza_id
+            if "pizza_seller_agent" not in self.agent_ids and os.getenv("PIZZA_SELLER_AGENT_ID"):
+                self.agent_ids["pizza_seller_agent"] = os.getenv("PIZZA_SELLER_AGENT_ID")
+                self.agent_ids["pizza-seller-agent-adk"] = os.getenv("PIZZA_SELLER_AGENT_ID")
 
             agent_info = []
             for name, meta in self.agent_metadata.items():

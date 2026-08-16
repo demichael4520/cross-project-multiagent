@@ -48,8 +48,8 @@ def main():
         enable_tracing=False,
         env_vars={
             "GOOGLE_GENAI_USE_VERTEXAI": "true",
-            "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", "projects/933480738993/locations/us-central1/reasoningEngines/5174760766418452480"),
-            "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", "projects/933480738993/locations/us-central1/reasoningEngines/6363711068044263424"),
+            "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
+            "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
         }
     )
 
@@ -162,6 +162,7 @@ def main():
             "GOOGLE_GENAI_USE_VERTEXAI": "true",
             "AGENT_PROJECT_ID": args.project,
             "AGENT_REGION": args.region,
+            "GOVERNANCE_PROJECT_ID": gateway_project,
             "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
             "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
         },

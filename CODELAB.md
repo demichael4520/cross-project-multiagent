@@ -311,6 +311,10 @@ uv run python deploy_concierge_adk.py \
   --gateway-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
 ```
 
+> [!NOTE]
+> **Dynamic Agent Registry Auto-Discovery**:
+> The Purchasing Concierge ADK agent dynamically queries the Central Agent Registry in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (`GOVERNANCE_PROJECT_ID`) at runtime to auto-discover the registered seller agent endpoints (Pizza Seller Agent and Burger Seller Agent). This eliminates hardcoding agent resource IDs or project numbers, making seller agent discovery completely dynamic.
+
 Extract the Concierge Reasoning Engine ID:
 ```bash
 export CONCIERGE_ENGINE_ID=$(gcloud aiplatform reasoning-engines list \
