@@ -585,10 +585,14 @@ Agent Gateway intercepts the outbound request from Concierge to Pizza Agent, eva
 ---
 
 ### Step 2: Inspect 403 Denial in Cloud Logging
-Instruct your operations team to verify the blocked request in Cloud Logging for the governance project (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`).
+Instruct your operations team to verify the blocked request in Cloud Logging for the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`).
+
+> [!IMPORTANT]
+> **Use Central Governance Project for Cloud Logging**:
+> All Agent Gateway authorization decisions and audit logs are recorded centrally in the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE` / `centralized-governance-project`) where Agent Gateway and Agent Registry reside, rather than the runtime projects. Always check logs in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
 
 #### Option A: Using `gcloud` CLI
-Run the following command to retrieve recent IAP authorization audit logs:
+Run the following command targeting the Central Governance Project:
 
 ```bash
 gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
@@ -598,7 +602,7 @@ gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayl
 ```
 
 #### Option B: Using Google Cloud Console Logs Explorer
-1. Navigate to **Logging > Logs Explorer** in the Cloud Console for `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
+1. Navigate to **Logging > Logs Explorer** in the Cloud Console for `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (**Central Governance Project**).
 2. Enter the query filter:
    ```text
    resource.type="audited_resource"
@@ -655,9 +659,9 @@ Now that the IAP policy is applied, Agent Gateway approves the egress request an
 ---
 
 ### Step 5: Verify 200 OK Approval in Cloud Logging
-Return to Cloud Logging in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` to inspect the updated audit log.
+Return to Cloud Logging in the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) to inspect the updated audit log.
 
-Run the `gcloud` command:
+Run the `gcloud` command targeting the Central Governance Project:
 ```bash
 gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
   --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
@@ -717,7 +721,7 @@ curl -X POST \
 ```
 
 #### Verify Burger Agent 200 OK Approval in Cloud Logging:
-Inspect Cloud Logging in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` to verify that Agent Gateway authorized the Burger Agent call:
+Inspect Cloud Logging in the **Central Governance Project** (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) to verify that Agent Gateway authorized the Burger Agent call:
 
 ```bash
 gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
