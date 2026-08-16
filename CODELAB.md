@@ -409,8 +409,8 @@ export CONCIERGE_SPIFFE_PRINCIPAL="principal://iam.googleapis.com/projects/${PRO
 echo "Concierge SPIFFE Principal: $CONCIERGE_SPIFFE_PRINCIPAL"
 ```
 
-### Step 2: Grant ALLOW Policy for Burger Agent
-Grant the Concierge Agent the `roles/iap.egressor` role on the Burger Agent in Central Agent Registry using `gcloud beta iap web add-iam-policy-binding`:
+### Step 2: Grant Egress Access ONLY to Burger Agent
+Grant `roles/iap.egressor` on the Burger Agent resource in Agent Registry. This allows the Purchasing Concierge's SPIFFE identity to communicate with the Burger Agent:
 
 ```bash
 gcloud beta iap web add-iam-policy-binding \
@@ -422,10 +422,10 @@ gcloud beta iap web add-iam-policy-binding \
   --member="$CONCIERGE_SPIFFE_PRINCIPAL"
 ```
 
-### Step 3: Enforce BLOCK Policy for Pizza Agent
-Because Agent Gateway enforces **Default Deny**, omitting the `roles/iap.egressor` binding for the Pizza Agent ensures that any invocation attempted by the Concierge Agent to the Pizza Agent will be rejected by Agent Gateway with **HTTP 403 Forbidden**.
+### Step 3: Keep Pizza Agent Unbound (Deny by Default)
+Do **NOT** add any IAP policy binding for the Pizza Agent yet. Because Agent Gateway enforces **Deny by Default**, omitting the `roles/iap.egressor` binding for the Pizza Agent ensures that initial egress attempts from Concierge to Pizza Agent will be blocked.
 
-If an IAM binding previously existed, remove it explicitly:
+If an IAM policy binding previously existed on the Pizza Agent, remove it explicitly:
 
 ```bash
 gcloud beta iap web remove-iam-policy-binding \
@@ -437,8 +437,8 @@ gcloud beta iap web remove-iam-policy-binding \
   --member="$CONCIERGE_SPIFFE_PRINCIPAL" || true
 ```
 
-### Step 4: Validate Agent IAM Policies
-Verify the updated IAP IAM policies for all agents:
+### Step 4: Validate Initial Agent IAM Policies
+Verify that only the Burger Agent has an IAP policy binding, while Pizza Agent has none:
 
 ```bash
 gcloud beta iap web get-iam-policy \
@@ -456,17 +456,19 @@ gcloud beta iap web get-iam-policy \
 
 ---
 
-## 9. Test and Verify Governance Policies
-duration: 10
+## 9. Test and Verify Governance Policies via Cloud Logging
+duration: 15
 
-Now verify that cross-project A2A communication properly obeys the IAP access control policies enforced by Agent Gateway.
+Now verify cross-project A2A communication, inspect Cloud Logging for policy decisions, update policies dynamically, and observe the policy state changes.
 
 > [!IMPORTANT]
 > **Use `curl` (terminal REST API) for Validation**:
-> You **MUST** use the `curl` terminal commands below to validate communication between the Purchasing Concierge and the seller agents. **Do NOT use the Vertex AI Agent Engine Playground UI** for validation, as the Playground UI executes queries under the user's browser session rather than invoking the Reasoning Engine REST `:query` endpoint directly with proper authorization tokens.
+> You **MUST** use the `curl` terminal commands below to validate communication between the Purchasing Concierge and seller agents. **Do NOT use the Vertex AI Agent Engine Playground UI** for validation, as the Playground UI executes queries under the user's browser session rather than invoking the Reasoning Engine REST `:query` endpoint directly with proper authorization tokens.
 
-### Test 1: Query Burger Agent (Expected: SUCCESS)
-Query the Purchasing Concierge to order a Burger:
+---
+
+### Step 1: Query Pizza Agent (Expected: BLOCKED / 403 Forbidden)
+Attempt to order a pizza through the Purchasing Concierge before granting IAP egress permissions:
 
 ```bash
 export AUTH_TOKEN=$(gcloud auth print-access-token)
@@ -477,24 +479,69 @@ curl -X POST \
   "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" \
   -d '{
     "input": {
-      "message": "Order a double cheeseburger with extra bacon from the burger agent",
+      "message": "Order a large pepperoni pizza from the pizza agent",
       "user_id": "codelab-user-1"
     }
   }' | jq .
 ```
 
-#### Expected Result:
-The query routes through Agent Gateway, IAP evaluates the ALLOW policy for the Burger Agent, approves the request, and returns a successful order confirmation:
+#### Expected Result (Terminal):
+Agent Gateway intercepts the outbound request from Concierge to Pizza Agent, evaluates IAP authorization, finds **NO** `roles/iap.egressor` binding, and **BLOCKS** the communication with HTTP `403 Forbidden` / `PERMISSION_DENIED`:
+
 ```json
 {
-  "output": "Burger order placed successfully! Order ID: BURGER-8821"
+  "error": {
+    "code": 403,
+    "message": "Permission denied: Agent Gateway blocked egress call to pizza-seller-agent due to IAP policy constraint.",
+    "status": "PERMISSION_DENIED"
+  }
 }
 ```
 
 ---
 
-### Test 2: Query Pizza Agent (Expected: BLOCKED / 403 FORBIDDEN)
-Query the Purchasing Concierge to order a Pizza:
+### Step 2: Inspect 403 Denial in Cloud Logging
+Instruct your operations team to verify the blocked request in Cloud Logging for the governance project (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE`).
+
+#### Option A: Using `gcloud` CLI
+Run the following command to retrieve recent IAP authorization audit logs:
+
+```bash
+gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --limit=5 \
+  --format="json"
+```
+
+#### Option B: Using Google Cloud Console Logs Explorer
+1. Navigate to **Logging > Logs Explorer** in the Cloud Console for `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
+2. Enter the query filter:
+   ```text
+   resource.type="audited_resource"
+   protoPayload.serviceName="iap.googleapis.com"
+   protoPayload.methodName="AuthorizeUser"
+   ```
+3. Observe the audit log entry showing `granted: false` or access denied for the Pizza Agent resource.
+
+---
+
+### Step 3: Grant Egress Policy for Pizza Agent (ALLOW Policy)
+Now update the IAP IAM policy on the Pizza Agent resource in Agent Registry to allow the Concierge Agent to communicate:
+
+```bash
+gcloud beta iap web add-iam-policy-binding \
+  --resource-type=agent-registry \
+  --agent=$PIZZA_AGENT_ID \
+  --region=$REGION \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --role="roles/iap.egressor" \
+  --member="$CONCIERGE_SPIFFE_PRINCIPAL"
+```
+
+---
+
+### Step 4: Re-query Pizza Agent (Expected: SUCCESS / 200 OK)
+Run the exact same query command again:
 
 ```bash
 curl -X POST \
@@ -509,15 +556,72 @@ curl -X POST \
   }' | jq .
 ```
 
-#### Expected Result:
-Agent Gateway intercepts the outbound request from Concierge to Pizza Agent, evaluates IAP authorization, finds **NO** `roles/iap.egressor` binding, and **BLOCKS** the communication:
+#### Expected Result (Terminal):
+Now that the IAP policy is applied, Agent Gateway approves the egress request and returns a successful response from the Pizza Agent:
+
 ```json
 {
-  "error": {
-    "code": 403,
-    "message": "Permission denied: Agent Gateway blocked egress call to pizza-seller-agent due to IAP policy constraint.",
-    "status": "PERMISSION_DENIED"
+  "output": "The Pepperoni Pizza is IDR 140K. Would you like to proceed with this?"
+}
+```
+
+---
+
+### Step 5: Verify 200 OK Approval in Cloud Logging
+Return to Cloud Logging in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` to inspect the updated audit log.
+
+Run the `gcloud` command:
+```bash
+gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --limit=5 \
+  --format="json"
+```
+
+#### Expected Audit Log Entry (Cloud Logging):
+You will see a new entry with `"granted": true` under `authorizationInfo`, confirming Agent Gateway successfully authorized the call:
+
+```json
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "authenticationInfo": {
+      "principalSubject": "principal://agents.global.org-528922920368.system.id.goog/resources/aiplatform/projects/934809438648/locations/us-central1/reasoningEngines/4423407296554467328"
+    },
+    "authorizationInfo": [
+      {
+        "granted": true,
+        "permission": "iap.webServiceVersions.egressViaIAP"
+      }
+    ],
+    "methodName": "AuthorizeUser",
+    "serviceName": "iap.googleapis.com"
   }
+}
+```
+
+---
+
+### Step 6: Query Burger Agent (Expected: SUCCESS / 200 OK)
+Query the Purchasing Concierge to order a Burger to confirm both agents are functioning properly:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" \
+  -d '{
+    "input": {
+      "message": "Order a classic cheeseburger from the burger agent",
+      "user_id": "codelab-user-1"
+    }
+  }' | jq .
+```
+
+#### Expected Result:
+```json
+{
+  "output": "I've created an order for one Classic Cheeseburger, which is IDR 85K."
 }
 ```
 
