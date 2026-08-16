@@ -249,6 +249,29 @@ echo "Burger Engine ID: $BURGER_ENGINE_ID"
 echo "Pizza Engine ID:  $PIZZA_ENGINE_ID"
 ```
 
+### Validate Seller Agents Agent Gateway Routing
+Verify that the seller agents were deployed with `AGENT_IDENTITY` and configured to route egress through the Central Agent Gateway:
+
+```bash
+export AUTH_TOKEN=$(gcloud auth print-access-token)
+
+curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}" | jq '{
+    displayName: .displayName,
+    identityType: .spec.identityType,
+    agentGateway: .spec.deploymentSpec.agentGatewayConfig.agentToAnywhereConfig.agentGateway
+  }'
+```
+
+#### Expected Validation Response:
+```json
+{
+  "displayName": "burger-seller-agent",
+  "identityType": "AGENT_IDENTITY",
+  "agentGateway": "projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw"
+}
+```
+
 ---
 
 ## 5. Deploy Purchasing Concierge Agent to agent-runtime1
@@ -256,6 +279,7 @@ duration: 10
 
 Deploy the **Purchasing Concierge Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` (`agent-runtime1`).
 
+### Step 1: Deploy Concierge Agent
 ```bash
 uv run python deploy_concierge_adk.py \
   --project=$GOOGLE_CLOUD_PROJECT_CONCIERGE \
@@ -277,6 +301,27 @@ export CONCIERGE_ENGINE_ID=$(gcloud aiplatform reasoning-engines list \
   --format="value(name)" | awk -F'/' '{print $NF}')
 
 echo "Concierge Engine ID: $CONCIERGE_ENGINE_ID"
+```
+
+### Step 2: Validate Concierge Agent Gateway Routing
+Query the Vertex AI Reasoning Engine REST API to verify that the Purchasing Concierge agent runtime is configured with `AGENT_IDENTITY` and points to the Central Agent Gateway:
+
+```bash
+curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}" | jq '{
+    displayName: .displayName,
+    identityType: .spec.identityType,
+    agentGateway: .spec.deploymentSpec.agentGatewayConfig.agentToAnywhereConfig.agentGateway
+  }'
+```
+
+#### Expected Validation Response:
+```json
+{
+  "displayName": "purchasing-concierge-adk",
+  "identityType": "AGENT_IDENTITY",
+  "agentGateway": "projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw"
+}
 ```
 
 ---
