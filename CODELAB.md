@@ -629,15 +629,16 @@ Run the exact same query command again:
 
 ```bash
 curl -X POST \
-  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Authorization: Bearer ${AUTH_TOKEN}" \
   -H "Content-Type: application/json" \
-  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" \
   -d '{
     "input": {
-      "message": "Order a large pepperoni pizza from the pizza agent",
-      "user_id": "codelab-user-1"
+      "kwargs": {
+        "input": "I want to order a Margherita pizza"
+      }
     }
-  }' | jq .
+  }' \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" | jq .
 ```
 
 #### Expected Result (Terminal):
@@ -645,7 +646,9 @@ Now that the IAP policy is applied, Agent Gateway approves the egress request an
 
 ```json
 {
-  "output": "The Pepperoni Pizza is IDR 140K. Would you like to proceed with this?"
+  "output": {
+    "output": "I have created your order for a Margherita pizza (100K) with the Pizza Seller Agent!"
+  }
 }
 ```
 
@@ -670,12 +673,13 @@ You will see a new entry with `"granted": true` under `authorizationInfo`, confi
   "protoPayload": {
     "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
     "authenticationInfo": {
-      "principalSubject": "principal://agents.global.org-528922920368.system.id.goog/resources/aiplatform/projects/934809438648/locations/us-central1/reasoningEngines/4423407296554467328"
+      "principalSubject": "principal://iam.googleapis.com/projects/934809438648/locations/us-central1/reasoningEngines/6780478751529500672"
     },
     "authorizationInfo": [
       {
         "granted": true,
-        "permission": "iap.webServiceVersions.egressViaIAP"
+        "permission": "iap.webServiceVersions.egressViaIAP",
+        "resource": "projects/centralized-governance-project/locations/us-central1/agents/agentregistry-00000000-0000-0000-39dd-83d8c7cd59f5"
       }
     ],
     "methodName": "AuthorizeUser",
@@ -691,21 +695,56 @@ Query the Purchasing Concierge to order a Burger to confirm both agents are func
 
 ```bash
 curl -X POST \
-  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Authorization: Bearer ${AUTH_TOKEN}" \
   -H "Content-Type: application/json" \
-  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" \
   -d '{
     "input": {
-      "message": "Order a classic cheeseburger from the burger agent",
-      "user_id": "codelab-user-1"
+      "kwargs": {
+        "input": "I want to order a Classic Cheeseburger"
+      }
     }
-  }' | jq .
+  }' \
+  "https://${REGION}-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query" | jq .
 ```
 
-#### Expected Result:
+#### Expected Result (Terminal):
 ```json
 {
-  "output": "I've created an order for one Classic Cheeseburger, which is IDR 85K."
+  "output": {
+    "output": "I have created your order for a Classic Cheeseburger (85K) with the Burger Seller Agent!"
+  }
+}
+```
+
+#### Verify Burger Agent 200 OK Approval in Cloud Logging:
+Inspect Cloud Logging in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` to verify that Agent Gateway authorized the Burger Agent call:
+
+```bash
+gcloud logging read 'protoPayload.serviceName="iap.googleapis.com" AND protoPayload.methodName="AuthorizeUser"' \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --limit=2 \
+  --format="json"
+```
+
+Expected audit log entry showing `"granted": true` for the Burger Agent resource (`agentregistry-...`):
+
+```json
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "authenticationInfo": {
+      "principalSubject": "principal://iam.googleapis.com/projects/934809438648/locations/us-central1/reasoningEngines/6780478751529500672"
+    },
+    "authorizationInfo": [
+      {
+        "granted": true,
+        "permission": "iap.webServiceVersions.egressViaIAP",
+        "resource": "projects/centralized-governance-project/locations/us-central1/agents/agentregistry-00000000-0000-0000-4d81-517ed250cf35"
+      }
+    ],
+    "methodName": "AuthorizeUser",
+    "serviceName": "iap.googleapis.com"
+  }
 }
 ```
 
