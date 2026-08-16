@@ -1,52 +1,57 @@
-id: governance-cross-project-a2a-agent-gateway
-summary: Governance for Cross-Project Agent-to-Agent (A2A) Communication with Agent Gateway, Agent Registry, and Identity-Aware Proxy
-categories: vertex-ai, ai-agents, governance
-environments: Web
-status: Published
-feedback link: https://github.com/demichael4520/cross-project-multiagent/issues
-author: Google Cloud
-
 # Governance for Cross-Project Agent-to-Agent (A2A) Communication with Agent Gateway and Agent Registry
 
+> **Codelab Metadata**
+> - **ID**: `governance-cross-project-a2a-agent-gateway`
+> - **Summary**: Governance for Cross-Project Agent-to-Agent (A2A) Communication with Agent Gateway, Agent Registry, and Identity-Aware Proxy
+> - **Categories**: Vertex AI, AI Agents, Governance
+> - **Author**: Google Cloud
+> - **Repository**: https://github.com/demichael4520/cross-project-multiagent
+
+---
+
 ## 1. Introduction
-duration: 5
+**Duration**: 5 minutes
 
 This Codelab explores enterprise cross-project **Agent-to-Agent (A2A)** governance and dynamic autodiscovery using **Gemini Enterprise Agent Platform** components: **Agent Gateway**, **Agent Registry**, and **Agent Identity**.
 
 In a multi-tenant enterprise architecture across **three projects**, agents run in isolated runtime projects while requiring centralized governance, fine-grained access control, and dynamic service discovery.
 
-Positive
-: **Architecture Best Practice Note**: In production enterprise deployments, using a **Shared VPC** with Private Service Connect (PSC) network attachments is the recommended method for Agent Centralization to enforce private network boundary isolation. However, the primary goal of this codelab is to demonstrate **cross-project governance, Identity-Aware Proxy (IAP) access control policies, and dynamic Agent Registry auto-discovery**. To focus on governance without networking overhead, this codelab uses a streamlined 3-project setup.
+> **Architecture Best Practice Note**:
+> In production enterprise deployments, using a **Shared VPC** with Private Service Connect (PSC) network attachments is the recommended method for Agent Centralization to enforce private network boundary isolation. However, the primary goal of this codelab is to demonstrate **cross-project governance, Identity-Aware Proxy (IAP) access control policies, and dynamic Agent Registry auto-discovery**. To focus on governance without networking overhead, this codelab uses a streamlined 3-project setup.
 
 ```
-+---------------------------------------------------+---------------------------------------------------+
-|                                                   |                                                   |
-|   PURCHASING RUNTIME PROJECT                      |               SELLER RUNTIME PROJECT              |
-|        (agent-runtime1)                           |                  (agent-runtime2)                 |
-|                                                   |                                                   |
-|  +---------------------------------------------+  |  +---------------------------------------------+  |
-|  |         Purchasing Concierge Agent          |  |  |     Burger Agent     |   Pizza Agent          |  |
-|  |         (Identity: AGENT_IDENTITY)          |  |  |   (Seller Agent)     | (Seller Agent)         |  |
-|  +----------------------+----------------------+  |  +----------------------+----------------------+  |
-|                         |                         |                         ^                         |
-+-------------------------|-------------------------+-------------------------|-------------------------+
-                          | (Egress via AGW)                                  | (Target Reasoning Engines)
-                          v                                                   |
-+-----------------------------------------------------------------------------|-------------------------+
-|                                  CENTRAL GOVERNANCE PROJECT                 |                         |
-|                               (centralized-governance-project)              |                         |
-|                                                                             |                         |
-|  +--------------------------------------------------------------------------+----------------------+  |
-|  |                             Central Agent Gateway (centralized-agw)                             |  |
-|  +--------------------------------------------------+----------------------------------------------+  |
-|                                                     |                                                 |
-|  +--------------------------------------------------v----------------------------------------------+  |
-|  |                                    Central Agent Registry                                       |  |
-|  |  +------------------------------------------+  +---------------------------------------------+  |  |
-|  |  |  Purchasing Concierge Agent              |  |  | Burger Agent (ALLOW)| Pizza Agent (BLOCK)  |  |  |
-|  |  +------------------------------------------+  +---------------------------------------------+  |  |
-|  +-------------------------------------------------------------------------------------------------+  |
-+-------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------+
+|                      PURCHASING RUNTIME PROJECT                        |
+|                           (agent-runtime1)                             |
+|  +------------------------------------------------------------------+  |
+|  |       Purchasing Concierge Agent (AGENT_IDENTITY)                |  |
+|  +-----------------------------------+------------------------------+  |
++--------------------------------------|---------------------------------+
+                                       | (Egress via Gateway)
+                                       v
++------------------------------------------------------------------------+
+|                      CENTRAL GOVERNANCE PROJECT                        |
+|                    (centralized-governance-project)                    |
+|  +------------------------------------------------------------------+  |
+|  |            Central Agent Gateway (centralized-agw)               |  |
+|  +-----------------------------------+------------------------------+  |
+|                                      |                                 |
+|  +-----------------------------------v------------------------------+  |
+|  |                       Central Agent Registry                     |  |
+|  |  +------------------------------+  +--------------------------+  |  |
+|  |  | Burger Agent (ALLOW Egress)  |  | Pizza Agent (DENY Egress)|  |  |
+|  |  +------------------------------+  +--------------------------+  |  |
+|  +------------------------------------------------------------------+  |
++--------------------------------------|---------------------------------+
+                                       | (Target Reasoning Engines)
+                                       v
++------------------------------------------------------------------------+
+|                        SELLER RUNTIME PROJECT                          |
+|                           (agent-runtime2)                             |
+|  +---------------------------------+--------------------------------+  |
+|  |       Burger Seller Agent       |       Pizza Seller Agent       |  |
+|  +---------------------------------+--------------------------------+  |
++------------------------------------------------------------------------+
 ```
 
 ### What you build
@@ -70,7 +75,7 @@ In this codelab, you will:
 ---
 
 ## 2. Setup and Requirements
-duration: 5
+**Duration**: 5 minutes
 
 ### Google Cloud Project Setup
 To complete this codelab, you need **3 Google Cloud projects** with billing enabled. If you need to create new Google Cloud projects, follow the official documentation:
@@ -204,7 +209,7 @@ gcloud beta iap web add-iam-policy-binding \
 ---
 
 ## 3. Deploy Centralized Agent Gateway
-duration: 10
+**Duration**: 10 minutes
 
 Deploy the centralized Agent Gateway (`centralized-agw`) in `AGENT_TO_ANYWHERE` egress mode inside the `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` project.
 
@@ -302,7 +307,7 @@ gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT_GOVERNANCE \
 ---
 
 ## 4. Deploy Seller Agents to agent-runtime2
-duration: 15
+**Duration**: 15 minutes
 
 Deploy both the **Burger Seller Agent** and **Pizza Seller Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_SELLERS` (`agent-runtime2`). Both deployments will specify the centralized gateway (`centralized-agw` in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`) and attach `types.IdentityType.AGENT_IDENTITY`.
 
@@ -366,7 +371,7 @@ Verify that the output contains the `agentGateway` configuration pointing to `pr
 ---
 
 ## 5. Deploy Purchasing Concierge Agent to agent-runtime1
-duration: 10
+**Duration**: 10 minutes
 
 Deploy the **Purchasing Concierge Agent** to Vertex AI Reasoning Engine in `$GOOGLE_CLOUD_PROJECT_CONCIERGE` (`agent-runtime1`).
 
@@ -397,7 +402,7 @@ gcloud ai reasoning-engines describe $CONCIERGE_ENGINE_ID \
 ---
 
 ## 6. Manually Register Agents in Central Agent Registry
-duration: 10
+**Duration**: 10 minutes
 
 Register all three agents (`burger-seller-agent`, `pizza-seller-agent`, and `purchasing-concierge-adk`) in the **Central Agent Registry** in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE`.
 
@@ -511,7 +516,7 @@ self.agent_ids.update(discovered_agents)
 ---
 
 ## 7. Configure Access Control Policies (Allow Burger / Block Pizza)
-duration: 10
+**Duration**: 10 minutes
 
 Agent Gateway uses **Identity-Aware Proxy (IAP)** to evaluate authorization decisions. Agent Gateway operates under a **Default Deny** security posture.
 
@@ -576,50 +581,41 @@ gcloud beta iap web get-iam-policy \
 ---
 
 ## 8. Test and Verify Governance Policies via Cloud Logging
-duration: 15
+**Duration**: 15 minutes
 
 Now verify cross-project A2A communication, inspect Cloud Logging for policy decisions, update policies dynamically, and observe the policy state changes.
 
-Negative
-: **Use `curl` (terminal REST API) for Validation**: You **MUST** use the `curl` terminal commands below to validate communication between the Purchasing Concierge and seller agents. **Do NOT use the Vertex AI Agent Engine Playground UI** for validation, as the Playground UI executes queries under the user's browser session rather than invoking the Reasoning Engine REST `:query` endpoint directly with proper authorization tokens.
+> **IMPORTANT - Use `curl` (terminal REST API) for Validation**:
+> You **MUST** use the `curl` terminal commands below to validate communication between the Purchasing Concierge and seller agents. **Do NOT use the Vertex AI Agent Engine Playground UI** for validation, as the Playground UI executes queries under the user's browser session rather than invoking the Reasoning Engine REST `:query` endpoint directly with proper authorization tokens.
 
 ### Cross-Project Agent-to-Agent Authorization Sequence
 The sequence diagram below illustrates how Agent Gateway and Identity-Aware Proxy enforce authorization decisions when the Concierge queries seller agents:
 
 ```
-+---------------------+       +---------------------+       +-------------------------+       +---------------------+
-| Purchasing Concierge |       |    Agent Gateway    |       |  Identity-Aware Proxy   |       |    Seller Agent     |
-|   (agent-runtime1)  |       | (central-governance)|       |  (IAP Authorization)    |       |   (agent-runtime2)  |
-+----------+----------+       +----------+----------+       +------------+------------+       +----------+----------+
-           |                             |                               |                               |
-           | 1. Query Burger Agent       |                               |                               |
-           |---------------------------->|                               |                               |
-           |                             | 2. Evaluate IAP Policy        |                               |
-           |                             |------------------------------>|                               |
-           |                             |                               |                               |
-           |                             | 3. Policy Approved (200 OK)   |                               |
-           |                             |<------------------------------|                               |
-           |                             |                               |                               |
-           |                             | 4. Forward Request to Burger  |                               |
-           |                             |-------------------------------------------------------------->|
-           |                             |                               |                               |
-           |                             | 5. Return Burger Response     |                               |
-           |                             |<--------------------------------------------------------------|
-           | 6. Return "Burger Order OK" |                               |                               |
-           |<----------------------------|                               |                               |
-           |                             |                               |                               |
-           |                             |                               |                               |
-           | 7. Query Pizza Agent        |                               |                               |
-           |---------------------------->|                               |                               |
-           |                             | 8. Evaluate IAP Policy        |                               |
-           |                             |------------------------------>|                               |
-           |                             |                               |                               |
-           |                             | 9. Policy Denied (403)        |                               |
-           |                             |<------------------------------|                               |
-           |                             |                               |                               |
-           | 10. HTTP 403 Forbidden      |                               |                               |
-           |<----------------------------|                               |                               |
-           |                             |                               |                               |
++-----------+            +---------------+            +-------------+
+| Concierge |            | Agent Gateway |            | Seller Agent|
+| (runtime1)|            |  (Governance) |            | (runtime2)  |
++-----+-----+            +-------+-------+            +------+------+
+      |                          |                           |
+      | 1. Query Burger Agent    |                           |
+      |------------------------->|                           |
+      |                          | 2. IAP Policy Approved    |
+      |                          |    (roles/iap.egressor)   |
+      |                          |                           |
+      |                          | 3. Forward to Burger      |
+      |                          |-------------------------->|
+      |                          |                           |
+      |                          | 4. Burger Response        |
+      |                          |<--------------------------|
+      | 5. Order Success (200)   |                           |
+      |<-------------------------|                           |
+      |                          |                           |
+      | 6. Query Pizza Agent     |                           |
+      |------------------------->|                           |
+      |                          | 7. IAP Policy Denied      |
+      |                          |    (Default Deny / 403)   |
+      | 8. HTTP 403 Forbidden    |                           |
+      |<-------------------------|                           |
 ```
 
 ### Step 1: Query Burger Agent (Expected: SUCCESS / 200 OK)
@@ -815,7 +811,7 @@ Expected audit log entry showing `"granted": true` for the Pizza Agent resource:
 ---
 
 ## 9. Clean Up
-duration: 5
+**Duration**: 5 minutes
 
 To prevent incurring ongoing charges to your Google Cloud account, delete the resources created during this Codelab.
 
@@ -852,7 +848,7 @@ gcloud alpha network-services agent-gateways delete $GATEWAY_NAME \
 ---
 
 ## 10. Congratulations!
-duration: 1
+**Duration**: 1 minute
 
 You have successfully built, deployed, and governed a multi-project **Agent-to-Agent (A2A)** architecture on Google Cloud across three projects using **Agent Gateway**, **Agent Registry**, and **Agent Identity**.
 
