@@ -389,6 +389,52 @@ echo "Pizza Projected Agent ID:     $PIZZA_AGENT_ID"
 echo "Concierge Projected Agent ID: $CONCIERGE_AGENT_ID"
 ```
 
+### Step 5: How Concierge Auto-Discovers Agents via Agent Registry REST API
+During initialization (`before_agent_callback`), the Purchasing Concierge dynamically queries the Agent Registry REST endpoint in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` to discover all registered seller agents and their mTLS endpoints without hardcoding resource IDs:
+
+```bash
+export AUTH_TOKEN=$(gcloud auth print-access-token)
+
+curl -s -H "Authorization: Bearer $AUTH_TOKEN" \
+  "https://agentregistry.googleapis.com/v1alpha/projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}/services" | jq .
+```
+
+#### Expected Auto-Discovery Response:
+The REST API returns the list of registered services, their display names, and target Reasoning Engine interface URLs:
+
+```json
+{
+  "services": [
+    {
+      "name": "projects/centralized-governance-project/locations/us-central1/services/pizza-seller-agent",
+      "displayName": "Pizza Seller Agent",
+      "description": "Pizza Seller Agent reasoning engine in agent-runtime2",
+      "interfaces": [
+        {
+          "url": "https://us-central1-aiplatform.mtls.googleapis.com/v1/projects/652324106007/locations/us-central1/reasoningEngines/3607692814046986240",
+          "protocolBinding": "JSONRPC"
+        }
+      ],
+      "registryResource": "projects/672690953426/locations/us-central1/agents/agentregistry-00000000-0000-0000-39dd-83d8c7cd59f5"
+    },
+    {
+      "name": "projects/centralized-governance-project/locations/us-central1/services/burger-seller-agent",
+      "displayName": "Burger Seller Agent",
+      "description": "Burger Seller Agent reasoning engine in agent-runtime2",
+      "interfaces": [
+        {
+          "url": "https://us-central1-aiplatform.mtls.googleapis.com/v1/projects/652324106007/locations/us-central1/reasoningEngines/744529350946193408",
+          "protocolBinding": "JSONRPC"
+        }
+      ],
+      "registryResource": "projects/672690953426/locations/us-central1/agents/agentregistry-00000000-0000-0000-4d81-517ed250cf35"
+    }
+  ]
+}
+```
+
+The Purchasing Concierge parses `services[].displayName` and `services[].interfaces[0].url` to map `burger_seller_agent` and `pizza_seller_agent` dynamically at runtime.
+
 ---
 
 ## 8. Configure Access Control Policies (Allow Burger / Block Pizza)
