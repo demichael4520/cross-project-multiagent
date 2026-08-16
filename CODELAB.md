@@ -135,6 +135,26 @@ gcloud services enable \
   --project=$GOOGLE_CLOUD_PROJECT_SELLERS
 ```
 
+### Register Core Google APIs Endpoint Service
+Agent Gateway requires Google API URLs to be registered in the Agent Registry so that agents can egress traffic securely to core Google Cloud services (such as Vertex AI, IAM Credentials, and Telemetry):
+
+```bash
+gcloud agent-registry services create core-gapi-services \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --location=$REGION \
+  --display-name="gapi.core.services" \
+  --description="core apis and services" \
+  --endpoint-spec-type=no-spec \
+  --interfaces=protocolBinding=JSONRPC,url=https://telemetry.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://telemetry.mtls.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://cloudresourcemanager.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://iamcredentials.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://iamcredentials.mtls.googleapis.com \
+  --interfaces=protocolBinding=JSONRPC,url=https://agentregistry.googleapis.com
+```
+
 ---
 
 ## 3. Configure Shared VPC and Private Service Connect
