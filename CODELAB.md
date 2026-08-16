@@ -65,6 +65,16 @@ In this codelab, you will:
 ## 2. Setup and Requirements
 duration: 5
 
+### Project Mapping Reference
+This codelab spans **3 standalone Google Cloud projects**. Refer to this table to know exactly which project to run each command against:
+
+| Component / Task | Google Cloud Project Name | Environment Variable |
+| :--- | :--- | :--- |
+| **Agent Gateway & Agent Registry** | Central Governance Project | `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (`centralized-governance-project`) |
+| **Purchasing Concierge Agent Runtime** | Concierge Runtime Project | `$GOOGLE_CLOUD_PROJECT_CONCIERGE` (`agent-runtime1`) |
+| **Burger & Pizza Seller Agent Runtimes** | Sellers Runtime Project | `$GOOGLE_CLOUD_PROJECT_SELLERS` (`agent-runtime2`) |
+| **IAP Authorization Audit Logs (Cloud Logging)** | Central Governance Project | `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (`centralized-governance-project`) |
+
 ### Environment Variables
 To make this codelab completely portable and reusable across environments, we define variable names for all project IDs, regions, and resources across the **three required projects**. **Do not hardcode project IDs or regions.**
 
