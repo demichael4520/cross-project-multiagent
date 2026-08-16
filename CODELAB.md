@@ -65,6 +65,13 @@ In this codelab, you will:
 ## 2. Setup and Requirements
 duration: 5
 
+### Google Cloud Project Setup
+To complete this codelab, you need **3 Google Cloud projects** with billing enabled. If you need to create new Google Cloud projects, follow the official documentation:
+- [Creating and Managing Google Cloud Projects](https://cloud.google.com/resource-manager/docs/creating-managing-projects)
+- [Enable Billing for a Project](https://cloud.google.com/billing/docs/how-to/modify-project)
+
+Ensure your Google Cloud user account or service account has `roles/owner` or `roles/resourcemanager.organizationAdmin` + `roles/iam.securityAdmin` across all 3 projects.
+
 ### Project Mapping Reference
 This codelab spans **3 standalone Google Cloud projects**. Refer to this table to know exactly which project to run each command against:
 
@@ -74,6 +81,17 @@ This codelab spans **3 standalone Google Cloud projects**. Refer to this table t
 | **Purchasing Concierge Agent Runtime** | Concierge Runtime Project | `$GOOGLE_CLOUD_PROJECT_CONCIERGE` (`agent-runtime1`) |
 | **Burger & Pizza Seller Agent Runtimes** | Sellers Runtime Project | `$GOOGLE_CLOUD_PROJECT_SELLERS` (`agent-runtime2`) |
 | **IAP Authorization Audit Logs (Cloud Logging)** | Central Governance Project | `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (`centralized-governance-project`) |
+
+### Required Google Cloud APIs & Agent Platform Overview
+This codelab relies on several key Google Cloud APIs and **Agent Platform** infrastructure services. For more details on API management, see [Enabling and Disabling Google Cloud Services](https://cloud.google.com/service-usage/docs/enable-disable).
+
+| API Name | Service Identifier | Description & Official Documentation |
+| :--- | :--- | :--- |
+| **Agent Registry API** | `agentregistry.googleapis.com` | Central catalog for multi-agent service discovery and IAP egress policy targets. See [Agent Gateway & Registry Runtime Deployment](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/agent-gateway-runtime-deploy). |
+| **Network Services API** | `networkservices.googleapis.com` | Manages Centralized Agent Gateway resources (`agentGateways`) in `AGENT_TO_ANYWHERE` egress mode. See [Deploy Agent Gateway Documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/agent-gateway-runtime-deploy#deploy-agent-gateway). |
+| **Identity-Aware Proxy API** | `iap.googleapis.com` | Enforces Zero-Trust IAP egress authorization policies (`roles/iap.egressor`). See [Google Cloud Identity-Aware Proxy (IAP) Overview](https://cloud.google.com/iap/docs/concepts-overview). |
+| **Vertex AI API** | `aiplatform.googleapis.com` | Hosts agent code as containerized runtimes in Vertex AI Reasoning Engine (Agent Engine). See [Vertex AI Agent Engine Overview](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/overview). |
+| **Cloud Storage API** | `storage.googleapis.com` | Stores Reasoning Engine deployment artifacts (pickles, dependencies, and requirements). See [Google Cloud Storage Documentation](https://cloud.google.com/storage/docs). |
 
 ### Environment Variables
 To make this codelab completely portable and reusable across environments, we define variable names for all project IDs, regions, and resources across the **three required projects**. **Do not hardcode project IDs or regions.**
