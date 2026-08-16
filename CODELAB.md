@@ -256,6 +256,11 @@ uv run python deploy_sellers_adk.py \
   --gateway-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
 ```
 
+> [!NOTE]
+> **Understanding Agent Gateway Parameter Resolution**:
+> The Python deployment script takes `--gateway-project` (`centralized-governance-project`) and `--gateway-name` (`centralized-agw`) and constructs the full Agent Gateway resource path required by the Vertex AI Agent Engine runtime:
+> `projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw`
+
 ### Extract Reasoning Engine IDs
 Upon successful deployment, `deploy_sellers_adk.py` saves the deployed resource IDs into `seller_agents.env`:
 
