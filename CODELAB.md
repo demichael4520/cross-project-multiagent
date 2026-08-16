@@ -431,9 +431,36 @@ The REST API returns the list of registered services, their display names, and t
     }
   ]
 }
-```
+The Purchasing Concierge parses `services[].displayName` and `services[].interfaces[0].url` to map `burger_seller_agent` and `pizza_seller_agent` dynamically at runtime using the following Python logic:
 
-The Purchasing Concierge parses `services[].displayName` and `services[].interfaces[0].url` to map `burger_seller_agent` and `pizza_seller_agent` dynamically at runtime.
+```python
+# purchasing_concierge/purchasing_agent.py
+headers = {"Authorization": f"Bearer {credentials.token}"}
+url = f"https://agentregistry.googleapis.com/v1alpha/projects/{governance_project}/locations/{location}/services"
+resp = requests.get(url, headers=headers, timeout=10)
+
+discovered_agents = {}
+if resp.status_code == 200:
+    services = resp.json().get("services", [])
+    for service in services:
+        display_name = service.get("displayName", "")
+        interfaces = service.get("interfaces", [])
+        if not interfaces:
+            continue
+            
+        target_url = interfaces[0].get("url", "")
+        re_match = re.search(r"(projects/\d+/locations/[^/]+/reasoningEngines/\d+)", target_url)
+        resource_path = re_match.group(1) if re_match else target_url
+
+        combined_str = f"{display_name} {service.get('name', '')}".lower()
+        if "burger" in combined_str:
+            discovered_agents["burger_seller_agent"] = resource_path
+        elif "pizza" in combined_str:
+            discovered_agents["pizza_seller_agent"] = resource_path
+
+# Update active agent map dynamically at runtime (no hardcoding)
+self.agent_ids.update(discovered_agents)
+```
 
 ---
 
