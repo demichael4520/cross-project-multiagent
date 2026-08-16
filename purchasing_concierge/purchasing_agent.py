@@ -201,9 +201,12 @@ Current active seller agent: {current_agent["active_agent"]}
 
         try:
             print(f"Calling remote agent {agent_name} (ID: {agent_id}) with task: {task}")
-            project_id = os.getenv("AGENT_PROJECT_ID", "deepakmichael-svc3")
-            location = os.getenv("AGENT_REGION", "us-central1")
-            vertexai.init(project=project_id, location=location)
+            if agent_id.startswith("projects/"):
+                target_project = agent_id.split("/")[1]
+            else:
+                target_project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("AGENT_PROJECT_ID") or "agent-runtime1"
+            location = os.getenv("AGENT_REGION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
+            vertexai.init(project=target_project, location=location)
             engine = reasoning_engines.ReasoningEngine(agent_id)
             try:
                 res = engine.query(message=task, user_id="purchasing_agent", session_id=session_id)
