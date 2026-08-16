@@ -461,6 +461,10 @@ duration: 10
 
 Now verify that cross-project A2A communication properly obeys the IAP access control policies enforced by Agent Gateway.
 
+> [!IMPORTANT]
+> **Use `curl` (terminal REST API) for Validation**:
+> You **MUST** use the `curl` terminal commands below to validate communication between the Purchasing Concierge and the seller agents. **Do NOT use the Vertex AI Agent Engine Playground UI** for validation, as the Playground UI executes queries under the user's browser session rather than invoking the Reasoning Engine REST `:query` endpoint directly with proper authorization tokens.
+
 ### Test 1: Query Burger Agent (Expected: SUCCESS)
 Query the Purchasing Concierge to order a Burger:
 
