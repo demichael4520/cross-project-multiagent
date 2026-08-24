@@ -96,7 +96,7 @@ Provided below is the available burger menu and it's related price:
 
     def invoke(self, query, sessionId) -> str:
         model = LLM(
-            model="vertex_ai/gemini-2.0-flash-lite",  # Use base model name without provider prefix
+            model="vertex_ai/gemini-3.5-flash-lite",  # Use base model name without provider prefix
         )
         burger_agent = Agent(
             role="Burger Seller Agent",
