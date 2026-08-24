@@ -8,6 +8,7 @@ dependencies = [
     "google-genai",
     "pydantic",
     "google-cloud-aiplatform[agent_engines,adk]>=1.40.0",
+    "google-cloud-storage>=3.0.0",
     "cloudpickle>=3.0.0",
     "python-dotenv",
     "opentelemetry-instrumentation-httpx",
