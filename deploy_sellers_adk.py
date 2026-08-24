@@ -16,6 +16,7 @@ import argparse
 import os
 os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+import vertexai
 import agentplatform
 from dotenv import load_dotenv
 from cleanup_old_deployments import delete_old_deployments
