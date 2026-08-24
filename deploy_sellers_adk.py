@@ -147,6 +147,8 @@ def main():
         "requirements": [
             "google-cloud-aiplatform[agent_engines]>=1.149.0",
             "google-adk[a2a,agent-identity]==1.34.0",
+            "cloudpickle>=3.0.0",
+            "pydantic>=2.0.0",
         ],
         "extra_packages": ["./remote_seller_agents"],
         "identity_type": "AGENT_IDENTITY",

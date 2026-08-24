@@ -161,6 +161,13 @@ export REGION="us-central1"
 export GATEWAY_NAME="centralized-agw"
 ```
 
+### Step 0: Pre-create GCS Staging Buckets
+The Vertex AI SDK requires a GCS staging bucket to package and upload agent code artifacts. To prevent `storage.buckets.create` permission errors (403 Forbidden) if your user account lacks bucket creation rights, pre-create the staging buckets in your runtime projects:
+```bash
+gsutil mb -p $GOOGLE_CLOUD_PROJECT_SELLERS -l $REGION gs://$GOOGLE_CLOUD_PROJECT_SELLERS-staging
+gsutil mb -p $GOOGLE_CLOUD_PROJECT_CONCIERGE -l $REGION gs://$GOOGLE_CLOUD_PROJECT_CONCIERGE-staging
+```
+
 ### Step 1: Deploy Seller Agents
 Deploy both the Burger and Pizza seller agents to `agent-runtime2`, binding them to the Agent Gateway and Agent Identity:
 ```bash
@@ -254,3 +261,25 @@ You can purge stale Reasoning Engine deployments at any time by running:
 uv run python cleanup_old_deployments.py --project=$GOOGLE_CLOUD_PROJECT_CONCIERGE --region=$REGION
 uv run python cleanup_old_deployments.py --project=$GOOGLE_CLOUD_PROJECT_SELLERS --region=$REGION
 ```
+
+---
+
+## Troubleshooting & Common Deployment Errors
+
+### 1. GCS Staging Bucket Creation Error (`storage.buckets.create` denied)
+* **Error**: `403 ... does not have storage.buckets.create access to the Google Cloud project.`
+* **Cause**: The Vertex AI SDK attempts to auto-create a staging bucket (`gs://<project>-staging`) if it does not already exist, which requires `storage.buckets.create` permission.
+* **Fix**: Pre-create the staging bucket using `gsutil` (Step 0) or pass an existing bucket via `--staging-bucket`:
+  ```bash
+  gsutil mb -p $GOOGLE_CLOUD_PROJECT_SELLERS -l $REGION gs://$GOOGLE_CLOUD_PROJECT_SELLERS-staging
+  ```
+
+### 2. AI Platform Reasoning Engine Listing Error (`aiplatform.reasoningEngines.list` denied)
+* **Error**: `403 Permission 'aiplatform.reasoningEngines.list' denied on resource '//aiplatform.googleapis.com/projects/...'`
+* **Cause**: The deploying identity lacks permissions to list existing Reasoning Engines during the cleanup phase.
+* **Fix**: Ensure the deploying user or service account has been granted **Vertex AI Administrator** (`roles/aiplatform.admin`) or **AI Platform User** (`roles/aiplatform.user`). The deployment scripts include graceful exception handling to skip cleanup if listing permissions are absent.
+
+### 3. Missing Python Requirements (`cloudpickle`, `pydantic`)
+* **Error**: `The following requirements are missing: {'cloudpickle', 'pydantic'}`
+* **Fix**: `cloudpickle` and `pydantic` are explicitly defined in the `requirements` configuration block of `deploy_sellers_adk.py` and `deploy_concierge_adk.py`.
+
