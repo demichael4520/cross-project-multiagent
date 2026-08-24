@@ -55,7 +55,7 @@ def create_burger_order(order_items: list[OrderItem]) -> str:
 
 burger_agent = LlmAgent(
     name="burger_seller_agent",
-    model="gemini-3.5-flash-lite",
+    model="gemini-2.0-flash-lite",
     instruction="""
 You are a specialized assistant for a burger store.
 Your sole purpose is to answer questions about what is available on burger menu and price also handle order creation.

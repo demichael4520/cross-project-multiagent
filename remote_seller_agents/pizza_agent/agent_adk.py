@@ -55,7 +55,7 @@ def create_pizza_order(order_items: list[OrderItem]) -> str:
 
 pizza_agent = LlmAgent(
     name="pizza_seller_agent",
-    model="gemini-3.5-flash-lite",
+    model="gemini-2.0-flash-lite",
     instruction="""
 You are a specialized assistant for a pizza store.
 Your sole purpose is to answer questions about what is available on pizza menu and price also handle order creation.
