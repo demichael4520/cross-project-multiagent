@@ -56,17 +56,9 @@ def main():
     from purchasing_concierge.agent import root_agent
     from vertexai.preview import reasoning_engines
 
-    raw_env_vars = {
-        "GOOGLE_GENAI_USE_VERTEXAI": "true",
-        "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
-        "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
-    }
-    filtered_env_vars = {k: v for k, v in raw_env_vars.items() if v}
-
     adk_app = reasoning_engines.AdkApp(
         agent=root_agent,
         enable_tracing=False,
-        env_vars=filtered_env_vars
     )
 
     class PlaygroundCompatibleAdkAgent:
@@ -156,6 +148,16 @@ def main():
 
     playground_app = PlaygroundCompatibleAdkAgent(app=adk_app)
 
+    raw_env_vars = {
+        "GOOGLE_GENAI_USE_VERTEXAI": "true",
+        "AGENT_PROJECT_ID": args.project,
+        "AGENT_REGION": args.region,
+        "GOVERNANCE_PROJECT_ID": gateway_project,
+        "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
+        "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
+    }
+    filtered_env_vars = {k: v for k, v in raw_env_vars.items() if v}
+
     concierge_config = {
         "staging_bucket": staging_bucket,
         "display_name": "purchasing-concierge-adk",
@@ -174,22 +176,15 @@ def main():
                 "agent_gateway": f"projects/{gateway_project}/locations/{args.region}/agentGateways/{args.gateway_name}"
             }
         },
-        "env_vars": {
-            "GOOGLE_GENAI_USE_VERTEXAI": "true",
-            "AGENT_PROJECT_ID": args.project,
-            "AGENT_REGION": args.region,
-            "GOVERNANCE_PROJECT_ID": gateway_project,
-            "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
-            "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
-        },
+        "env_vars": filtered_env_vars,
     }
 
     print("Deploying Purchasing Concierge with Agent Identity & Agent Gateway...")
-    deployed_concierge = client.agent_engines.create(
+    deployed_concierge = reasoning_engines.ReasoningEngine.create(
         agent=playground_app,
-        config=concierge_config,
+        **concierge_config,
     )
-    concierge_name = deployed_concierge.api_resource.name
+    concierge_name = deployed_concierge.resource_name
     print(f"Purchasing Concierge deployed: {concierge_name}")
     print(f"Concierge ID: {concierge_name}")
 

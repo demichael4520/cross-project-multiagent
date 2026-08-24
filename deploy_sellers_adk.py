@@ -46,12 +46,6 @@ def main():
     print("Cleaning up old unused seller agent deployments...")
     delete_old_deployments(args.project, args.region, ["burger-seller-agent-adk", "pizza-seller-agent-adk", "purchasing-concierge-adk"])
 
-    client = vertexai.Client(
-        project=args.project,
-        location=args.region,
-        http_options=dict(api_version="v1beta1"),
-    )
-
     from remote_seller_agents.burger_agent.agent_adk import burger_agent as burger_adk_agent
     from remote_seller_agents.pizza_agent.agent_adk import pizza_agent as pizza_adk_agent
     from vertexai.preview import reasoning_engines
@@ -169,8 +163,11 @@ def main():
     burger_app = reasoning_engines.AdkApp(agent=burger_adk_agent, enable_tracing=False)
     burger_playground = PlaygroundCompatibleAdkAgent(burger_app)
     burger_config = {**common_config, "display_name": "burger-seller-agent-adk"}
-    deployed_burger = client.agent_engines.create(agent=burger_playground, config=burger_config)
-    burger_name = deployed_burger.api_resource.name
+    deployed_burger = reasoning_engines.ReasoningEngine.create(
+        agent=burger_playground,
+        **burger_config,
+    )
+    burger_name = deployed_burger.resource_name
     print(f"Burger Agent deployed: {burger_name}")
 
     # Deploy Pizza Agent
@@ -178,8 +175,11 @@ def main():
     pizza_app = reasoning_engines.AdkApp(agent=pizza_adk_agent, enable_tracing=False)
     pizza_playground = PlaygroundCompatibleAdkAgent(pizza_app)
     pizza_config = {**common_config, "display_name": "pizza-seller-agent-adk"}
-    deployed_pizza = client.agent_engines.create(agent=pizza_playground, config=pizza_config)
-    pizza_name = deployed_pizza.api_resource.name
+    deployed_pizza = reasoning_engines.ReasoningEngine.create(
+        agent=pizza_playground,
+        **pizza_config,
+    )
+    pizza_name = deployed_pizza.resource_name
     print(f"Pizza Agent deployed: {pizza_name}")
 
     with open("seller_agents.env", "w") as f:
