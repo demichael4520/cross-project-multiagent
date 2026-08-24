@@ -180,11 +180,11 @@ def main():
     }
 
     print("Deploying Purchasing Concierge with Agent Identity & Agent Gateway...")
-    deployed_concierge = reasoning_engines.ReasoningEngine.create(
+    deployed_concierge = client.agent_engines.create(
         agent=playground_app,
-        **concierge_config,
+        config=concierge_config,
     )
-    concierge_name = deployed_concierge.resource_name
+    concierge_name = deployed_concierge.api_resource.name
     print(f"Purchasing Concierge deployed: {concierge_name}")
     print(f"Concierge ID: {concierge_name}")
 
