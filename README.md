@@ -161,12 +161,34 @@ export REGION="us-central1"
 export GATEWAY_NAME="centralized-agw"
 ```
 
-### Step 0: Pre-create GCS Staging Buckets
-The Vertex AI SDK requires a GCS staging bucket to package and upload agent code artifacts. To prevent `storage.buckets.create` permission errors (403 Forbidden) if your user account lacks bucket creation rights, pre-create the staging buckets in your runtime projects:
+### Step 0: Pre-create GCS Staging Buckets (Project-Specific or Centralized)
+
+The Vertex AI SDK requires a GCS staging bucket to package and upload agent code artifacts. You can choose either project-specific buckets or a **consolidated single staging bucket** in your governance project to limit storage resources across projects:
+
+#### Option A: Project-Specific Staging Buckets (Default)
+Pre-create a staging bucket in each runtime project:
 ```bash
 gsutil mb -p $GOOGLE_CLOUD_PROJECT_SELLERS -l $REGION gs://$GOOGLE_CLOUD_PROJECT_SELLERS-staging
 gsutil mb -p $GOOGLE_CLOUD_PROJECT_CONCIERGE -l $REGION gs://$GOOGLE_CLOUD_PROJECT_CONCIERGE-staging
 ```
+
+#### Option B: Consolidated Central Staging Bucket (Recommended for Multi-Project Governance)
+If you want to consolidate storage and limit bucket proliferation across multiple runtime projects:
+1. Create a single shared bucket in your Centralized Governance Project:
+   ```bash
+   gsutil mb -p $GOOGLE_CLOUD_PROJECT_GOVERNANCE -l $REGION gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging
+   ```
+2. Grant cross-project IAM read/write access (`storage.objectAdmin`) to each runtime project's Vertex AI service agent:
+   ```bash
+   # Get project numbers
+   export CONCIERGE_PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_CONCIERGE --format="value(projectNumber)")
+   export SELLERS_PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_SELLERS --format="value(projectNumber)")
+
+   # Grant access
+   gsutil iam ch serviceAccount:service-${CONCIERGE_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com:objectAdmin gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging
+   gsutil iam ch serviceAccount:service-${SELLERS_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com:objectAdmin gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging
+   ```
+3. Pass `--staging-bucket=gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging` when executing your deployment scripts.
 
 ### Step 1: Deploy Seller Agents
 Deploy both the Burger and Pizza seller agents to `agent-runtime2`, binding them to the Agent Gateway and Agent Identity:
