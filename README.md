@@ -306,3 +306,12 @@ uv run python cleanup_old_deployments.py --project=$GOOGLE_CLOUD_PROJECT_SELLERS
 * **Error**: `The following requirements are missing: {'cloudpickle', 'pydantic'}`
 * **Fix**: `cloudpickle` and `pydantic` are explicitly defined in the `requirements` configuration block of `deploy_sellers_adk.py` and `deploy_concierge_adk.py`.
 
+### 4. GCS Bucket Access / ADC Authentication Mismatch (`storage.buckets.get` denied)
+* **Error**: `403 GET ... does not have storage.buckets.get access to the Google Cloud Storage bucket.`
+* **Cause**: Application Default Credentials (ADC) are authenticated as an alternate account (`admin@deepakmichael.altostrat.com`) which lacks permissions on the shared staging bucket, even though your active `gcloud` CLI user has access.
+* **Fix**: Re-authenticate Application Default Credentials using your active Google Cloud account:
+  ```bash
+  gcloud auth application-default login
+  ```
+
+
