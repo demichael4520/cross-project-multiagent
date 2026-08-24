@@ -19,7 +19,7 @@ os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*vertexai.Client class is deprecated.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*Protobuf gencode version.*")
-import vertexai
+import agentplatform
 from dotenv import load_dotenv
 
 load_dotenv("seller_agents.env")
@@ -50,7 +50,7 @@ def main():
     print("Cleaning up old unused purchasing concierge deployments...")
     delete_old_deployments(args.project, args.region, ["purchasing-concierge-adk"])
 
-    client = vertexai.Client(
+    client = agentplatform.Client(
         project=args.project,
         location=args.region,
         http_options=dict(api_version="v1beta1"),
