@@ -16,9 +16,6 @@ import argparse
 import os
 os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning, message=".*vertexai.Client class is deprecated.*")
-warnings.filterwarnings("ignore", category=UserWarning, message=".*Protobuf gencode version.*")
 import agentplatform
 from dotenv import load_dotenv
 
