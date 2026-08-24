@@ -165,19 +165,26 @@ export GATEWAY_NAME="centralized-agw"
 
 To limit storage usage and prevent bucket proliferation across multiple runtime projects, create a single shared GCS staging bucket in your Centralized Governance Project:
 
-1. Create the central shared bucket:
+1. Create the central shared bucket using the recommended `gcloud storage` CLI:
    ```bash
-   gsutil mb -p $GOOGLE_CLOUD_PROJECT_GOVERNANCE -l $REGION gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging
+   gcloud storage buckets create gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
+     --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+     --location=$REGION
    ```
-2. Grant cross-project IAM read/write access (`storage.objectAdmin`) to each runtime project's Vertex AI service agent:
+2. Grant cross-project IAM read/write access (`storage.objectAdmin`) to each runtime project's Vertex AI service agent using `gcloud storage`:
    ```bash
    # Get project numbers
    export CONCIERGE_PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_CONCIERGE --format="value(projectNumber)")
    export SELLERS_PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_SELLERS --format="value(projectNumber)")
 
    # Grant access
-   gsutil iam ch serviceAccount:service-${CONCIERGE_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com:objectAdmin gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging
-   gsutil iam ch serviceAccount:service-${SELLERS_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com:objectAdmin gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging
+   gcloud storage buckets add-iam-policy-binding gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
+     --member="serviceAccount:service-${CONCIERGE_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com" \
+     --role="roles/storage.objectAdmin"
+
+   gcloud storage buckets add-iam-policy-binding gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
+     --member="serviceAccount:service-${SELLERS_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com" \
+     --role="roles/storage.objectAdmin"
    ```
 
 ### Step 1: Deploy Seller Agents
@@ -283,9 +290,11 @@ uv run python cleanup_old_deployments.py --project=$GOOGLE_CLOUD_PROJECT_SELLERS
 ### 1. GCS Staging Bucket Creation Error (`storage.buckets.create` denied)
 * **Error**: `403 ... does not have storage.buckets.create access to the Google Cloud project.`
 * **Cause**: The Vertex AI SDK attempts to auto-create a staging bucket (`gs://<project>-staging`) if it does not already exist, which requires `storage.buckets.create` permission.
-* **Fix**: Pre-create the staging bucket using `gsutil` (Step 0) or pass an existing bucket via `--staging-bucket`:
+* **Fix**: Pre-create the central shared staging bucket using the recommended `gcloud storage` CLI (Step 0) or pass an existing bucket via `--staging-bucket`:
   ```bash
-  gsutil mb -p $GOOGLE_CLOUD_PROJECT_SELLERS -l $REGION gs://$GOOGLE_CLOUD_PROJECT_SELLERS-staging
+  gcloud storage buckets create gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
+    --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+    --location=$REGION
   ```
 
 ### 2. AI Platform Reasoning Engine Listing Error (`aiplatform.reasoningEngines.list` denied)
