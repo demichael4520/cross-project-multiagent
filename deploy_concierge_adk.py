@@ -56,14 +56,17 @@ def main():
     from purchasing_concierge.agent import root_agent
     from vertexai.preview import reasoning_engines
 
+    raw_env_vars = {
+        "GOOGLE_GENAI_USE_VERTEXAI": "true",
+        "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
+        "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
+    }
+    filtered_env_vars = {k: v for k, v in raw_env_vars.items() if v}
+
     adk_app = reasoning_engines.AdkApp(
         agent=root_agent,
         enable_tracing=False,
-        env_vars={
-            "GOOGLE_GENAI_USE_VERTEXAI": "true",
-            "PIZZA_SELLER_AGENT_ID": os.environ.get("PIZZA_SELLER_AGENT_ID", ""),
-            "BURGER_SELLER_AGENT_ID": os.environ.get("BURGER_SELLER_AGENT_ID", ""),
-        }
+        env_vars=filtered_env_vars
     )
 
     class PlaygroundCompatibleAdkAgent:
