@@ -6,9 +6,9 @@ It demonstrates **A2A (Agent-to-Agent) Multi-Runtime Orchestration** with **Dyna
 
 > [!NOTE]
 > **Environment Reference Project Mapping (3-Project Setup)**:
-> - **Central Governance Project (`PROJECT_GOVERNANCE`)**: `deepakmichaelprod` (Project Number: `114740196141`) — Hosts the Central Agent Gateway (`agw-egress`), Agent Registry, Identity-Aware Proxy (IAP), and Authorization Policies.
-> - **Concierge Runtime Project (`PROJECT_CONCIERGE`)**: `deepakmichaelprod` (or dedicated runtime `agent-runtime1`) — Hosts the Purchasing Concierge Root Orchestrator Agent.
-> - **Sellers Runtime Project (`PROJECT_SELLERS`)**: `deepakmichaelstage` (Project Number: `439077346891`, `agent-runtime2`) — Hosts the Burger Seller Agent and Pizza Seller Agent.
+> - **Central Governance Project (`PROJECT_GOVERNANCE`)**: `centralized-governance-project` — Hosts the Central Agent Gateway (`centralized-agw`), Agent Registry, Identity-Aware Proxy (IAP), and Authorization Policies.
+> - **Concierge Runtime Project (`PROJECT_CONCIERGE`)**: `agent-runtime1` — Hosts the Purchasing Concierge Root Orchestrator Agent.
+> - **Sellers Runtime Project (`PROJECT_SELLERS`)**: `agent-runtime2` — Hosts the Burger Seller Agent and Pizza Seller Agent.
 > - **Region**: `us-central1`
 
 ---
@@ -20,7 +20,7 @@ sequenceDiagram
     autonumber
     actor Client as User / Console Playground
     participant Concierge as Purchasing Concierge (Root Agent in PROJECT_CONCIERGE)
-    participant Gateway as Agent Gateway (agw-egress in PROJECT_GOVERNANCE)
+    participant Gateway as Agent Gateway (centralized-agw in PROJECT_GOVERNANCE)
     participant Registry as Agent Registry (Central Governance in PROJECT_GOVERNANCE)
     participant Burger as Burger Seller Agent (Seller in PROJECT_SELLERS)
     participant Pizza as Pizza Seller Agent (Seller in PROJECT_SELLERS)
@@ -35,11 +35,11 @@ sequenceDiagram
     par Route via Agent Gateway to Burger Agent (mTLS SPIFFE)
         Concierge->>Gateway: stream_query() via Agent Gateway
         Gateway->>Burger: Forward request with SPIFFE identity & IAP Egress Token
-        Burger-->>Concierge: Returns Order ID (b9e08075-ad6f-439f-9648-ad1e5cc4c977)
+        Burger-->>Concierge: Returns Order ID (BURGER-99214)
     and Route via Agent Gateway to Pizza Agent (mTLS SPIFFE)
         Concierge->>Gateway: stream_query() via Agent Gateway
         Gateway->>Pizza: Forward request with SPIFFE identity & IAP Egress Token
-        Pizza-->>Concierge: Returns Order ID (1c71a642-7e13-4461-8399-92b623eba9e5)
+        Pizza-->>Concierge: Returns Order ID (PIZZA-10492)
     end
 
     Concierge-->>Client: Returns aggregated order response with receipts
@@ -55,12 +55,12 @@ Root orchestrators (`PROJECT_CONCIERGE`) and specialist seller agents (`PROJECT_
 
 ### 2. Dynamic Autodiscovery via Agent Registry & Cross-Project URLs
 The **Purchasing Concierge** dynamically discovers registered seller agents at runtime via the regional **Agent Registry** in `PROJECT_GOVERNANCE`.
-- Service URLs in the Agent Registry point across project boundaries:
-  `https://us-central1-aiplatform.mtls.googleapis.com/v1/projects/439077346891/locations/us-central1/reasoningEngines/<ENGINE_ID>`
-- The concierge parses numeric project numbers (e.g., `439077346891`) back to their GCP project IDs (`deepakmichaelstage`) dynamically.
+- Service URLs in the Agent Registry point across project boundaries using numeric project numbers:
+  `https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}`
+- The concierge extracts the target reasoning engine resource path dynamically from the service interfaces at runtime.
 
 ### 3. Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway Egress
-Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust multi-agent communication by routing all inter-agent calls through the central **Agent Gateway** (`projects/deepakmichaelprod/locations/us-central1/agentGateways/agw-egress`) in `PROJECT_GOVERNANCE` using SPIFFE/mTLS managed machine identities.
+Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust multi-agent communication by routing all inter-agent calls through the central **Agent Gateway** (`projects/${PROJECT_GOVERNANCE}/locations/${REGION}/agentGateways/${GATEWAY_NAME}`) in `PROJECT_GOVERNANCE` using SPIFFE/mTLS managed machine identities.
 
 ---
 
@@ -101,7 +101,7 @@ gcloud projects add-iam-policy-binding $PROJECT_GOVERNANCE \
 | :--- | :--- | :--- | :--- |
 | `ar_agw_cross_project_sa` (Custom Role) | `PROJECT_GOVERNANCE` (`networkservices.agentGateways.get`, `networkservices.operations.get`) | Spoke Project Service Agents (`service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com`) | Enables cross-project Agent Gateway lookup and operation status validation during agent runtime deployment. |
 | `roles/networkservices.viewer` | `PROJECT_GOVERNANCE` | Spoke Project Service Agents | Predefined alternative containing gateway and operation viewer permissions. |
-| `roles/iap.egressor` | Agent Registry Agent Resource (`--agent`) in `PROJECT_GOVERNANCE` | Concierge Engine Principal (`principal://agents.global.org-1015654926499...`) | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to seller agent runtimes. |
+| `roles/iap.egressor` | Agent Registry Agent Resource (`--agent`) in `PROJECT_GOVERNANCE` | Concierge Engine Principal (`principal://agents.global.org-${ORG_ID}.system.id.goog/...`) | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to seller agent runtimes. |
 | `roles/aiplatform.user` | Reasoning Engines in `PROJECT_SELLERS` | Concierge Engine Principal & Service Accounts | Grants invocation and user access permissions on spoke reasoning engine runtimes. |
 | `roles/agentregistry.viewer` | `PROJECT_GOVERNANCE` | Concierge Service Accounts & PrincipalSet | Enables dynamic auto-discovery of registered agent endpoints from the Agent Registry. |
 
@@ -116,11 +116,16 @@ gcloud projects add-iam-policy-binding $PROJECT_GOVERNANCE \
 
 ### Export Configuration Variables
 ```bash
-export PROJECT_GOVERNANCE="deepakmichaelprod"
-export PROJECT_CONCIERGE="deepakmichaelprod"
-export PROJECT_SELLERS="deepakmichaelstage"
+export PROJECT_GOVERNANCE="centralized-governance-project"
+export PROJECT_CONCIERGE="agent-runtime1"
+export PROJECT_SELLERS="agent-runtime2"
 export REGION="us-central1"
-export GATEWAY_NAME="agw-egress"
+export GATEWAY_NAME="centralized-agw"
+
+export PROJECT_NUMBER_GOVERNANCE=$(gcloud projects describe $PROJECT_GOVERNANCE --format="value(projectNumber)")
+export PROJECT_NUMBER_CONCIERGE=$(gcloud projects describe $PROJECT_CONCIERGE --format="value(projectNumber)")
+export PROJECT_NUMBER_SELLERS=$(gcloud projects describe $PROJECT_SELLERS --format="value(projectNumber)")
+export ORG_ID=$(gcloud projects get-ancestors $PROJECT_GOVERNANCE --format="value(id, type)" | grep organization | awk '{print $1}')
 ```
 
 ### Step 1: Deploy Isolated Seller Agents to Spoke Project
@@ -154,24 +159,30 @@ uv run python deploy_concierge_adk.py \
 
 ## Agent Registry Endpoint Updates & Cross-Project URLs
 
-After deploying new reasoning engine instances, update the registered Agent Registry services in `$PROJECT_GOVERNANCE` to point to the new spoke reasoning engine endpoints in `$PROJECT_SELLERS`:
+After deploying reasoning engine instances, register or update the services in `$PROJECT_GOVERNANCE` to point to the spoke reasoning engine endpoints in `$PROJECT_SELLERS`:
 
 ```bash
-export SELLERS_PROJECT_NUMBER=$(gcloud projects describe $PROJECT_SELLERS --format="value(projectNumber)")
-export BURGER_ENGINE_ID="2715395147641651200"
-export PIZZA_ENGINE_ID="5638231305805103104"
+export BURGER_ENGINE_ID=$(gcloud ai reasoning-engines list --project=$PROJECT_SELLERS --region=$REGION --filter="displayName:burger-seller-agent" --format="value(name)" | head -n1 | awk -F'/' '{print $NF}')
+export PIZZA_ENGINE_ID=$(gcloud ai reasoning-engines list --project=$PROJECT_SELLERS --region=$REGION --filter="displayName:pizza-seller-agent" --format="value(name)" | head -n1 | awk -F'/' '{print $NF}')
+export CONCIERGE_ENGINE_ID=$(gcloud ai reasoning-engines list --project=$PROJECT_CONCIERGE --region=$REGION --filter="displayName:purchasing-concierge-adk" --format="value(name)" | head -n1 | awk -F'/' '{print $NF}')
 
-# Update Burger Seller Agent Service
+# Register / Update Burger Seller Agent Service
 gcloud alpha agent-registry services update burger-seller-agent \
   --project=$PROJECT_GOVERNANCE \
   --location=$REGION \
-  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${SELLERS_PROJECT_NUMBER}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}"
+  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}"
 
-# Update Pizza Seller Agent Service
+# Register / Update Pizza Seller Agent Service
 gcloud alpha agent-registry services update pizza-seller-agent \
   --project=$PROJECT_GOVERNANCE \
   --location=$REGION \
-  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${SELLERS_PROJECT_NUMBER}/locations/${REGION}/reasoningEngines/${PIZZA_ENGINE_ID}"
+  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${PIZZA_ENGINE_ID}"
+
+# Register / Update Purchasing Concierge Agent Service
+gcloud alpha agent-registry services update purchasing-concierge-adk \
+  --project=$PROJECT_GOVERNANCE \
+  --location=$REGION \
+  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}"
 ```
 
 ---
@@ -182,8 +193,6 @@ To verify that deployed reasoning engine instances in `$PROJECT_SELLERS` are cor
 
 ```bash
 export TOKEN=$(gcloud auth application-default print-access-token)
-export BURGER_ENGINE_ID="2715395147641651200"
-export PIZZA_ENGINE_ID="5638231305805103104"
 
 # Validate Burger Agent Gateway Route
 curl -s -X GET "https://${REGION}-aiplatform.googleapis.com/v1beta1/projects/${PROJECT_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}" \
@@ -202,10 +211,10 @@ curl -s -X GET "https://${REGION}-aiplatform.googleapis.com/v1beta1/projects/${P
 ```json
 {
   "displayName": "burger-seller-agent-adk",
-  "effectiveIdentity": "agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/439077346891/locations/us-central1/reasoningEngines/2715395147641651200",
+  "effectiveIdentity": "agents.global.org-<ORG_ID>.system.id.goog/resources/aiplatform/projects/<PROJECT_NUMBER_SELLERS>/locations/us-central1/reasoningEngines/<BURGER_ENGINE_ID>",
   "agentGatewayConfig": {
     "agentToAnywhereConfig": {
-      "agentGateway": "projects/deepakmichaelprod/locations/us-central1/agentGateways/agw-egress"
+      "agentGateway": "projects/centralized-governance-project/locations/us-central1/agentGateways/centralized-agw"
     }
   }
 }
@@ -228,8 +237,10 @@ The deployed agents include the `PlaygroundCompatibleAdkAgent` wrapper, which ex
    - **Test 2 (Pizza - BLOCK)**: Type:
      > *"I confirm ordering 1 Pepperoni Pizza for IDR 140K from pizza seller agent. Please place this order now."*
      > **Result**: Blocked by IAP Default Deny (HTTP 403 Forbidden).
-   - **Test 3 (Pizza - Dynamic ALLOW Update)**: Add IAP egress binding for `pizza-seller-agent`:
+   - **Test 3 (Pizza - Dynamic ALLOW Update)**: Add IAP egress binding for `pizza-seller-agent` in `$PROJECT_GOVERNANCE`:
      ```bash
+     export CONCIERGE_SPIFFE_PRINCIPAL="principal://agents.global.org-${ORG_ID}.system.id.goog/resources/aiplatform/projects/${PROJECT_NUMBER_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}"
+
      gcloud beta iap web add-iam-policy-binding \
        --resource-type=agent-registry \
        --agent=pizza-seller-agent \
