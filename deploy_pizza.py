@@ -129,8 +129,28 @@ def main():
 
         def stream_query(self, input = None, user_id = None, session_id = None, **kwargs):
             message, effective_user_id, effective_session_id, clean_kwargs = self._parse_args(input, user_id, session_id, **kwargs)
+            has_yielded_text = False
             for chunk in self.app.stream_query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs):
-                yield chunk
+                if isinstance(chunk, dict) and isinstance(chunk.get("content"), dict):
+                    parts = chunk["content"].get("parts", [])
+                    if isinstance(parts, list):
+                        for part in parts:
+                            if isinstance(part, dict) and "text" in part:
+                                if not part.get("thought") and not part.get("raw_thought"):
+                                    text_val = part["text"]
+                                    if text_val:
+                                        has_yielded_text = True
+                                        yield text_val
+                elif isinstance(chunk, str) and chunk:
+                    has_yielded_text = True
+                    yield chunk
+
+            if not has_yielded_text:
+                res = self.app.query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs)
+                if isinstance(res, dict):
+                    yield res.get("output", str(res))
+                else:
+                    yield str(res)
 
         async def async_query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
             return self.query(input=input, user_id=user_id, session_id=session_id, **kwargs)
