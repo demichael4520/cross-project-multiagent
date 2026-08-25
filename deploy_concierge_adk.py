@@ -180,6 +180,9 @@ def main():
 
     raw_env_vars = {
         "GOOGLE_GENAI_USE_VERTEXAI": "true",
+        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+        "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+        "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH": "/etc/ssl/certs/ca-certificates.crt",
         "AGENT_PROJECT_ID": args.project,
         "AGENT_REGION": args.region,
         "GOVERNANCE_PROJECT_ID": gateway_project,
