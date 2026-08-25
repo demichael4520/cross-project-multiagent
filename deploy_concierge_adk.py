@@ -35,14 +35,14 @@ def main():
 
     gateway_project = args.gateway_project or args.project
 
-    staging_bucket = args.staging_bucket or f"gs://{args.project}-staging"
-    if not staging_bucket.startswith("gs://"):
-        staging_bucket = f"gs://{staging_bucket}"
+    staging_arg = args.staging_bucket or f"{args.project}-staging"
+    staging_bucket_name = staging_arg.removeprefix("gs://")
+    staging_bucket_uri = f"gs://{staging_bucket_name}"
 
     vertexai.init(
         project=args.project,
         location=args.region,
-        staging_bucket=staging_bucket,
+        staging_bucket=staging_bucket_uri,
     )
 
     print("Cleaning up old unused purchasing concierge deployments...")
@@ -109,7 +109,7 @@ def main():
                 if next_val is not None:
                     input = next_val
                 else:
-                    str_vals = [v for v in input.values() if isinstance(v, str)]
+                    str_vals = [v for k, v in input.items() if isinstance(v, str) and k not in ("user", "userId", "user_id", "author", "role", "session_id", "sessionId")]
                     if str_vals:
                         input = str_vals[0]
                     else:
@@ -124,16 +124,24 @@ def main():
 
         def query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
             message, effective_user_id, effective_session_id, clean_kwargs = self._parse_args(input, user_id, session_id, **kwargs)
-            final_text = ""
-            for chunk in self.app.stream_query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs):
-                if isinstance(chunk, dict) and isinstance(chunk.get("content"), dict):
-                    parts = chunk["content"].get("parts", [])
-                    if isinstance(parts, list):
-                        for part in parts:
-                            if isinstance(part, dict) and "text" in part:
-                                if not part.get("thought") and not part.get("raw_thought"):
-                                    final_text += part["text"]
-            return {"output": final_text}
+            try:
+                res = self.app.query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs)
+                if isinstance(res, dict):
+                    if "output" in res:
+                        return res
+                    return {"output": str(res)}
+                return {"output": str(res)}
+            except Exception:
+                final_text = ""
+                for chunk in self.app.stream_query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs):
+                    if isinstance(chunk, dict) and isinstance(chunk.get("content"), dict):
+                        parts = chunk["content"].get("parts", [])
+                        if isinstance(parts, list):
+                            for part in parts:
+                                if isinstance(part, dict) and "text" in part:
+                                    if not part.get("thought") and not part.get("raw_thought"):
+                                        final_text += part["text"]
+                return {"output": final_text}
 
         def stream_query(self, input = None, user_id = None, session_id = None, **kwargs):
             message, effective_user_id, effective_session_id, clean_kwargs = self._parse_args(input, user_id, session_id, **kwargs)
@@ -160,7 +168,7 @@ def main():
     filtered_env_vars = {k: v for k, v in raw_env_vars.items() if v}
 
     concierge_config = {
-        "staging_bucket": staging_bucket,
+        "staging_bucket": staging_bucket_uri,
         "display_name": "purchasing-concierge-adk",
         "requirements": [
             "google-cloud-aiplatform[agent_engines]>=1.149.0",

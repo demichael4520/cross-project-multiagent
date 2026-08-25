@@ -1,8 +1,14 @@
 # Multi-Agent Purchasing Concierge on Agent Runtime (ADK)
 
-This project implements a secure, multi-agent purchasing concierge system deployed on **Vertex AI Agent Runtime (Reasoning Engines)** using the Google **Agent Development Kit (ADK)** and **Agent Identity / Agent Gateway**.
+This project implements a secure, cross-project multi-agent purchasing concierge system deployed on **Vertex AI Agent Runtime (Reasoning Engines)** using the Google **Agent Development Kit (ADK)**, **Agent Identity**, and **Agent Gateway**.
 
-It demonstrates **A2A (Agent-to-Agent) Multi-Runtime Orchestration** with **Dynamic Autodiscovery via Agent Registry**, allowing coordinating root agents to discover and delegate tasks to specialist agents across isolated Reasoning Engine runtimes.
+It demonstrates **A2A (Agent-to-Agent) Multi-Runtime Orchestration** with **Dynamic Autodiscovery via Agent Registry**, allowing a root orchestrator agent in a central governance project to discover and delegate tasks to specialist agents hosted in separate spoke projects across isolated Reasoning Engine runtimes.
+
+> [!NOTE]
+> **Environment Reference Project Mapping**:
+> - **Governance / Central Gateway Project (`GOOGLE_CLOUD_PROJECT_GOVERNANCE`)**: `deepakmichaelprod` (Project Number: `114740196141`)
+> - **Seller Spoke Project (`GOOGLE_CLOUD_PROJECT_SELLERS`)**: `deepakmichaelstage` (Project Number: `439077346891`)
+> - **Region**: `us-central1`
 
 ---
 
@@ -11,31 +17,31 @@ It demonstrates **A2A (Agent-to-Agent) Multi-Runtime Orchestration** with **Dyna
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Client as User / Client
-    participant Concierge as Purchasing Concierge (Root Agent in agent-runtime1)
-    participant Gateway as Agent Gateway (Central Router)
-    participant Registry as Agent Registry (Centralized Governance)
-    participant Burger as Burger Seller Agent (Seller in agent-runtime2)
-    participant Pizza as Pizza Seller Agent (Seller in agent-runtime2)
+    actor Client as User / Console Playground
+    participant Concierge as Purchasing Concierge (Root Agent in GOOGLE_CLOUD_PROJECT_GOVERNANCE)
+    participant Gateway as Agent Gateway (agw-egress in GOOGLE_CLOUD_PROJECT_GOVERNANCE)
+    participant Registry as Agent Registry (Central Governance)
+    participant Burger as Burger Seller Agent (Seller in GOOGLE_CLOUD_PROJECT_SELLERS)
+    participant Pizza as Pizza Seller Agent (Seller in GOOGLE_CLOUD_PROJECT_SELLERS)
 
     Note over Concierge,Registry: Dynamic Autodiscovery via Agent Registry
     Concierge->>Registry: list_agents()
-    Registry-->>Concierge: Returns discovered Agent URIs & Resource IDs
+    Registry-->>Concierge: Returns Cross-Project mTLS Endpoint URIs & Reasoning Engine IDs
 
-    Client->>Concierge: query("I want to order 1 burger and 2 pizzas")
+    Client->>Concierge: query("Order 1 burger and 1 pizza")
     activate Concierge
 
-    par Route via Gateway to Burger Agent (ALLOW Policy)
+    par Route via Agent Gateway to Burger Agent (mTLS SPIFFE)
         Concierge->>Gateway: stream_query() via Agent Gateway
-        Gateway->>Burger: Forward request with SPIFFE mTLS identity
-        Burger-->>Concierge: Returns Order ID & Summary
-    and Route via Gateway to Pizza Agent (BLOCK Policy)
+        Gateway->>Burger: Forward request with SPIFFE identity & IAP Egress Token
+        Burger-->>Concierge: Returns Order ID (b9e08075-ad6f-439f-9648-ad1e5cc4c977)
+    and Route via Agent Gateway to Pizza Agent (mTLS SPIFFE)
         Concierge->>Gateway: stream_query() via Agent Gateway
-        Gateway--xPizza: Gateway intercepts & blocks call with HTTP 403 Forbidden
-        Pizza-->>Concierge: PERMISSION_DENIED
+        Gateway->>Pizza: Forward request with SPIFFE identity & IAP Egress Token
+        Pizza-->>Concierge: Returns Order ID (1c71a642-7e13-4461-8399-92b623eba9e5)
     end
 
-    Concierge-->>Client: Returns aggregated order response
+    Concierge-->>Client: Returns aggregated order response with receipts
     deactivate Concierge
 ```
 
@@ -43,278 +49,216 @@ sequenceDiagram
 
 ## Key Features & Best Practices
 
-### 1. Decoupled Multi-Runtime Isolation
-Root orchestrators (`agent-runtime1`) and specialist seller agents (`agent-runtime2`) execute in separate Reasoning Engine containers on Vertex AI Agent Runtime, ensuring clean architectural boundaries and independent scalability.
+### 1. Decoupled Multi-Runtime & Package Isolation
+Root orchestrators (`GOOGLE_CLOUD_PROJECT_GOVERNANCE`) and specialist seller agents (`GOOGLE_CLOUD_PROJECT_SELLERS`) execute in separate Reasoning Engine containers on Vertex AI Agent Runtime. Each agent is packaged in an isolated subpackage directory (`burger_pkg` and `pizza_pkg`) to prevent Python `cloudpickle` namespace collisions across sibling runtimes.
 
-### 2. Dynamic Autodiscovery via Agent Registry
-Think of the **Agent Registry** as a **Corporate Directory** for AI agents.
-When your main manager agent (the **Purchasing Concierge**) wakes up:
-* **The Challenge**: It needs to know who its team members are (**Burger Seller Agent** and **Pizza Seller Agent**) and what their direct extension numbers (Reasoning Engine resource IDs) are, without hardcoding them.
-* **How ADK Helps**: The **Agent Development Kit (ADK)** provides a built-in phone book lookup tool (`AgentRegistry`).
-* **The Lookup**: The Concierge asks Google Cloud: *"Hey, who is registered in my project/governance registry?"*
-* **The Response**: The directory replies with a list of agents, their names (`burger_seller_agent`, `pizza_seller_agent`), and their cloud addresses.
-* **Ready for Action**: The Concierge saves these addresses so that whenever a customer asks for a burger or pizza, it immediately knows exactly who to call.
+### 2. Dynamic Autodiscovery via Agent Registry & Cross-Project URLs
+The **Purchasing Concierge** dynamically discovers registered seller agents at runtime via the regional **Agent Registry**.
+- Service URLs in the Agent Registry point across project boundaries:
+  `https://us-central1-aiplatform.mtls.googleapis.com/v1/projects/439077346891/locations/us-central1/reasoningEngines/<ENGINE_ID>`
+- The concierge parses numeric project numbers (e.g., `439077346891`) back to their GCP project IDs (`deepakmichaelstage`) dynamically.
 
-### 3. Agent Cards (`AgentCard`): Subagent Profiles
-Before an agent can be discovered in the Agent Registry or communicated with via A2A protocols, it publishes an **Agent Card** (`AgentCard`). An Agent Card acts as the digital business card or resume of a subagent, defining:
-* **Identity**: Name and version (`name="burger_seller_agent"`, `version="1.0.0"`).
-* **Description**: What the agent does (so the LLM knows when to delegate to it).
-* **Capabilities & Skills**: Specific tools and actions supported (e.g., `create_burger_order`).
-* **Endpoint URL**: Where the agent is hosted (`url=...`).
+### 3. Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway Egress
+Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust multi-agent communication by routing all inter-agent calls through the central **Agent Gateway** (`projects/deepakmichaelprod/locations/us-central1/agentGateways/agw-egress`) using SPIFFE/mTLS managed machine identities.
 
-### 4. How Autodiscovery Works in Code
-Inside `purchasing_agent.py`, the `before_agent_callback` hook queries the regional Agent Registry upon initialization:
+---
 
-```python
-from google.adk.integrations.agent_registry import AgentRegistry
+## Summary of IAM Permissions and Roles Used
 
-registry = AgentRegistry(project_id=project, location=location)
-response = registry.list_agents()
-
-for agent in response.get("agents", []):
-    display_name = agent.get("displayName")
-    runtime_ref = agent.get("adkAgentDefinition", {}).get("provisionedReasoningEngine", {}).get("reasoningEngine")
-
-    stream_url = None
-    for proto in agent.get("protocols", []):
-        for iface in proto.get("interfaces", []):
-            if "streamQuery" in iface.get("url", ""):
-                stream_url = iface.get("url")
-
-    if display_name and runtime_ref:
-        if "burger" in display_name.lower():
-            self.agent_ids["burger_seller_agent"] = runtime_ref
-            self.agent_urls["burger_seller_agent"] = stream_url
-        elif "pizza" in display_name.lower():
-            self.agent_ids["pizza_seller_agent"] = runtime_ref
-            self.agent_urls["pizza_seller_agent"] = stream_url
-```
-
-This guarantees that if specialist agent endpoints are redeployed or scaled, the purchasing concierge automatically resolves their latest resource identifiers without requiring manual code updates.
-
-### 5. Secure Machine Identity (`AGENT_IDENTITY`) & Agent Gateway Routing
-Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust multi-agent communication by routing all inter-agent calls through the user-supplied **Agent Gateway** using SPIFFE/mTLS managed machine identities.
-
-#### Summary of IAM Permissions and Roles Used
 | Role / Permission | Target Resource | Principal / Subject | Purpose |
 | :--- | :--- | :--- | :--- |
-| `ar_agw_cross_project_sa` (Custom) | Gateway Project (`networkservices.agentGateways.get`, `networkservices.operations.get`) | Spoke Project Service Agents | Enables cross-project Agent Gateway lookup and operation status validation. |
+| `ar_agw_cross_project_sa` (Custom Role) | Gateway Project (`networkservices.agentGateways.get`, `networkservices.operations.get`) | Spoke Project Service Agents | Enables cross-project Agent Gateway lookup and operation status validation. |
 | `roles/networkservices.viewer` | Gateway Project | Spoke Project Service Agents | Allows viewing network service objects across projects. |
-| `roles/iap.egressor` | Agent Registry Agent Resource (`--agent`) | Agent SPIFFE Principals / Concierge Engine Principal | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to agent runtimes. |
+| `roles/iap.egressor` | Agent Registry Agent Resource (`--agent`) | Concierge Engine Principal (`principal://agents.global.org-1015654926499...`) | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to seller agent runtimes. |
 | `roles/aiplatform.user` | Reasoning Engines (Spoke Runtimes) | Concierge Engine Principal & Service Accounts | Grants invocation and user access permissions on spoke reasoning engine runtimes. |
 | `roles/agentregistry.viewer` | Governance/Gateway Project | Concierge Service Accounts & PrincipalSet | Enables dynamic auto-discovery of registered agent endpoints from the Agent Registry. |
 | `roles/aiplatform.agentContextEditor` | Reasoning Engines | Agent SPIFFE Principals | Allows agents to invoke, query, and pass conversation context. |
-| `aiplatform.reasoningEngines.query` / `streamQuery` | Reasoning Engine Runtimes | Authenticated Agent Principals | Enables execution of reasoning engine methods. |
 
 ---
 
-## Prerequisites
+## Deployment Guide
 
-Before deploying and running multi-agent workflows, ensure the following prerequisites are set up in your GCP environment:
+### Prerequisites
+1. GCP Projects with Vertex AI, Agent Registry, and Network Services APIs enabled.
+2. `uv` installed for dependency management.
+3. Central Agent Gateway created in the Governance project.
 
-1. **Google Cloud Project & CLI**: Google Cloud Projects with Vertex AI API enabled and `gcloud` installed and authenticated (`gcloud auth login`).
-2. **Python & uv**: [uv](https://github.com/astral-sh/uv) installed for fast Python dependency management.
-3. **Agent Gateway**: An active Agent Gateway configured in your target region (e.g. named via `--gateway-name` or `${GATEWAY_NAME}`).
-4. **Core Google APIs Endpoint Service Registration**: Register core Google APIs and services in the Agent Registry so that agents can route requests securely:
-
+### Export Configuration Variables
 ```bash
+export GOOGLE_CLOUD_PROJECT_GOVERNANCE="deepakmichaelprod"
+export GOOGLE_CLOUD_PROJECT_SELLERS="deepakmichaelstage"
 export REGION="us-central1"
-export GOOGLE_CLOUD_PROJECT_GOVERNANCE="centralized-governance-project"
-
-gcloud agent-registry services create core-gapi-services \
-  --project=${GOOGLE_CLOUD_PROJECT_GOVERNANCE} \
-  --location=${REGION} \
-  --display-name="gapi.core.services" \
-  --description="core apis and services" \
-  --endpoint-spec-type=no-spec \
-  --interfaces=protocolBinding=JSONRPC,url=https://telemetry.googleapis.com \
-  --interfaces=protocolBinding=JSONRPC,url=https://telemetry.mtls.googleapis.com \
-  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.googleapis.com \
-  --interfaces=protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com \
-  --interfaces=protocolBinding=JSONRPC,url=https://cloudresourcemanager.googleapis.com \
-  --interfaces=protocolBinding=JSONRPC,url=https://iamcredentials.googleapis.com \
-  --interfaces=protocolBinding=JSONRPC,url=https://iamcredentials.mtls.googleapis.com \
-  --interfaces=protocolBinding=JSONRPC,url=https://agentregistry.googleapis.com
+export GATEWAY_NAME="agw-egress"
 ```
 
----
-
-## Installation & Setup
-
-Clone the repository and sync dependencies:
-
+### Step 1: Deploy Isolated Seller Agents to Spoke Project
+Deploy Burger and Pizza seller agents to `$GOOGLE_CLOUD_PROJECT_SELLERS` (`deepakmichaelstage`):
 ```bash
-git clone https://github.com/demichael4520/cross-project-multiagent.git
-cd cross-project-multiagent
-uv sync
-```
-
----
-
-## Deployment Guide (Agent Gateway Routing)
-
-Both the seller agents and the purchasing concierge are deployed with Agent Identity and configured to route all inter-agent requests through the **Agent Gateway**.
-
-Export your GCP configuration variables:
-```bash
-export GOOGLE_CLOUD_PROJECT_GOVERNANCE="centralized-governance-project"
-export GOOGLE_CLOUD_PROJECT_CONCIERGE="agent-runtime1"
-export GOOGLE_CLOUD_PROJECT_SELLERS="agent-runtime2"
-export REGION="us-central1"
-export GATEWAY_NAME="centralized-agw"
-```
-
-### Step 0: Pre-create Consolidated Central Staging Bucket
-
-To limit storage usage and prevent bucket proliferation across multiple runtime projects, create a single shared GCS staging bucket in your Centralized Governance Project:
-
-1. Create the central shared bucket using the recommended `gcloud storage` CLI:
-   ```bash
-   gcloud storage buckets create gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
-     --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-     --location=$REGION
-   ```
-2. Grant cross-project IAM read/write access (`storage.objectAdmin`) to each runtime project's Vertex AI service agent using `gcloud storage`:
-   ```bash
-   # Get project numbers
-   export CONCIERGE_PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_CONCIERGE --format="value(projectNumber)")
-   export SELLERS_PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_SELLERS --format="value(projectNumber)")
-
-   # Grant access
-   gcloud storage buckets add-iam-policy-binding gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
-     --member="serviceAccount:service-${CONCIERGE_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com" \
-     --role="roles/storage.objectAdmin"
-
-   gcloud storage buckets add-iam-policy-binding gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
-     --member="serviceAccount:service-${SELLERS_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com" \
-     --role="roles/storage.objectAdmin"
-   ```
-
-### Step 1: Deploy Seller Agents
-Deploy both the Burger and Pizza seller agents to `agent-runtime2`, utilizing the consolidated central staging bucket:
-```bash
-uv run python deploy_sellers_adk.py \
+uv run python deploy_burger.py \
   --project=$GOOGLE_CLOUD_PROJECT_SELLERS \
   --region=$REGION \
-  --staging-bucket=gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
-  --gateway-name=$GATEWAY_NAME \
-  --gateway-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
+  --governance-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --gateway=projects/$GOOGLE_CLOUD_PROJECT_GOVERNANCE/locations/$REGION/agentGateways/$GATEWAY_NAME
+
+uv run python deploy_pizza.py \
+  --project=$GOOGLE_CLOUD_PROJECT_SELLERS \
+  --region=$REGION \
+  --governance-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --gateway=projects/$GOOGLE_CLOUD_PROJECT_GOVERNANCE/locations/$REGION/agentGateways/$GATEWAY_NAME
 ```
 
-### Step 2: Deploy Purchasing Concierge (Root Agent)
-Deploy the root orchestrator to `agent-runtime1`, utilizing the consolidated central staging bucket:
+### Step 2: Deploy Purchasing Concierge to Governance Project
+Deploy the root orchestrator to `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (`deepakmichaelprod`):
 ```bash
 uv run python deploy_concierge_adk.py \
-  --project=$GOOGLE_CLOUD_PROJECT_CONCIERGE \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
   --region=$REGION \
   --staging-bucket=gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
   --gateway-name=$GATEWAY_NAME \
   --gateway-project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE
-```
-
-### Step 3: Register Agents in Agent Registry
-Register all three agents in the centralized Agent Registry:
-```bash
-# Burger Seller Agent
-gcloud agent-registry services create burger-seller-agent \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --location=$REGION \
-  --display-name="Burger Seller Agent" \
-  --agent-spec-type=no-spec \
-  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}"
-
-# Pizza Seller Agent
-gcloud agent-registry services create pizza-seller-agent \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --location=$REGION \
-  --display-name="Pizza Seller Agent" \
-  --agent-spec-type=no-spec \
-  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_SELLERS}/locations/${REGION}/reasoningEngines/${PIZZA_ENGINE_ID}"
-
-# Purchasing Concierge ADK
-gcloud agent-registry services create purchasing-concierge-adk \
-  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-  --location=$REGION \
-  --display-name="Purchasing Concierge ADK" \
-  --agent-spec-type=no-spec \
-  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${PROJECT_NUMBER_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}"
 ```
 
 ---
 
-## Testing & Validation via curl (REST API)
+## Agent Registry Endpoint Updates & Cross-Project URLs
 
-To dynamically resolve your deployed Reasoning Engine IDs without hardcoding them, query the Vertex AI Reasoning Engines REST API using `curl` and `jq`:
+After deploying new reasoning engine instances, update the registered Agent Registry services in `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (`deepakmichaelprod`) to point to the new spoke reasoning engine endpoints in `$GOOGLE_CLOUD_PROJECT_SELLERS` (`deepakmichaelstage`, Project Number `439077346891`):
 
 ```bash
-export TOKEN=$(gcloud auth print-access-token)
-export PROJECT_ID="agent-runtime1"
-export REGION="us-central1"
+export SELLERS_PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT_SELLERS --format="value(projectNumber)")
+export BURGER_ENGINE_ID="2715395147641651200"
+export PIZZA_ENGINE_ID="5638231305805103104"
 
-# Fetch reasoning engine ID
-export CONCIERGE_ENGINE_ID=$(gcloud aiplatform reasoning-engines list \
-  --project=$PROJECT_ID \
-  --region=$REGION \
-  --filter="displayName:purchasing-concierge-adk" \
-  --format="value(name)" | awk -F'/' '{print $NF}')
+# Update Burger Seller Agent Service
+gcloud alpha agent-registry services update burger-seller-agent \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --location=$REGION \
+  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${SELLERS_PROJECT_NUMBER}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}"
 
-echo "CONCIERGE_ENGINE_ID=$CONCIERGE_ENGINE_ID"
+# Update Pizza Seller Agent Service
+gcloud alpha agent-registry services update pizza-seller-agent \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --location=$REGION \
+  --interfaces="protocolBinding=JSONRPC,url=https://${REGION}-aiplatform.mtls.googleapis.com/v1/projects/${SELLERS_PROJECT_NUMBER}/locations/${REGION}/reasoningEngines/${PIZZA_ENGINE_ID}"
 ```
 
-### Validate Purchasing Concierge
+---
+
+## Validation of Agent Runtime Route to Agent Gateway
+
+To verify that deployed reasoning engine instances are correctly configured to route inter-agent traffic through the central Agent Gateway, query their deployment specs via `curl`:
+
 ```bash
-curl -X POST \
-  -H "Authorization: Bearer $TOKEN" \
+export TOKEN=$(gcloud auth application-default print-access-token)
+export BURGER_ENGINE_ID="2715395147641651200"
+export PIZZA_ENGINE_ID="5638231305805103104"
+
+# Validate Burger Agent Gateway Route
+curl -s -X GET "https://${REGION}-aiplatform.googleapis.com/v1beta1/projects/${GOOGLE_CLOUD_PROJECT_SELLERS}/locations/${REGION}/reasoningEngines/${BURGER_ENGINE_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  https://$REGION-aiplatform.googleapis.com/v1beta1/projects/$PROJECT_ID/locations/$REGION/reasoningEngines/$CONCIERGE_ENGINE_ID:query \
+  | jq '{displayName: .displayName, effectiveIdentity: .spec.effectiveIdentity, agentGatewayConfig: .spec.deploymentSpec.agentGatewayConfig}'
+
+# Validate Pizza Agent Gateway Route
+curl -s -X GET "https://${REGION}-aiplatform.googleapis.com/v1beta1/projects/${GOOGLE_CLOUD_PROJECT_SELLERS}/locations/${REGION}/reasoningEngines/${PIZZA_ENGINE_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  | jq '{displayName: .displayName, effectiveIdentity: .spec.effectiveIdentity, agentGatewayConfig: .spec.deploymentSpec.agentGatewayConfig}'
+```
+
+**Expected Output**:
+```json
+{
+  "displayName": "burger-seller-agent-adk",
+  "effectiveIdentity": "agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/439077346891/locations/us-central1/reasoningEngines/2715395147641651200",
+  "agentGatewayConfig": {
+    "agentToAnywhereConfig": {
+      "agentGateway": "projects/deepakmichaelprod/locations/us-central1/agentGateways/agw-egress"
+    }
+  }
+}
+```
+
+---
+
+## Testing via Google Cloud Console Playground
+
+The deployed agents include the `PlaygroundCompatibleAdkAgent` wrapper, which exposes `register_operations` (`query`, `stream_query`) and parses dictionary payloads sent by the **Google Cloud Console Playground**.
+
+### How to Test in Console UI:
+1. Open the [Google Cloud Console](https://console.cloud.google.com/).
+2. Navigate to **Vertex AI > Reasoning Engines** in project `$GOOGLE_CLOUD_PROJECT_GOVERNANCE` (`deepakmichaelprod`).
+3. Click on **`purchasing-concierge-adk`**.
+4. In the **Playground** chat window on the right side, type:
+   > *"I confirm ordering 1 Classic Cheeseburger for IDR 85K from burger seller agent and 1 Pepperoni Pizza for IDR 140K from pizza seller agent. Please place both orders now."*
+5. The agent will execute the cross-project A2A workflow via Agent Gateway and return full order confirmation receipts (`Order ID`).
+
+### Testing via REST API (`curl`):
+```bash
+export CONCIERGE_ENGINE_ID="4485309801198256128"
+
+curl -X POST \
+  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  -H "Content-Type: application/json" \
+  https://${REGION}-aiplatform.googleapis.com/v1beta1/projects/${GOOGLE_CLOUD_PROJECT_GOVERNANCE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query \
   -d '{
     "input": {
-      "input": "I want to order 1 classic cheeseburger.",
-      "user_id": "terminal_user"
+      "input": "I confirm ordering 1 Classic Cheeseburger for IDR 85K from burger seller agent and 1 Pepperoni Pizza for IDR 140K from pizza seller agent. Please place both orders now.",
+      "user_id": "console-tester-user"
     }
   }'
 ```
 
 ---
 
-## Cleanup & Resource Teardown
+## Cloud Logging Validation
 
-### Purging Stale Deployments
-You can purge stale Reasoning Engine deployments at any time by running:
+You can audit inter-agent routing, SPIFFE identity verification, and execution logs across both governance and spoke projects using `gcloud logging read`.
+
+### 1. Governance Project Logs (`$GOOGLE_CLOUD_PROJECT_GOVERNANCE` / `deepakmichaelprod`)
+Audit Purchasing Concierge execution and Agent Gateway egress logs:
 ```bash
-uv run python cleanup_old_deployments.py --project=$GOOGLE_CLOUD_PROJECT_CONCIERGE --region=$REGION
-uv run python cleanup_old_deployments.py --project=$GOOGLE_CLOUD_PROJECT_SELLERS --region=$REGION
+# Query Concierge Reasoning Engine Execution Logs
+gcloud logging read \
+  'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND resource.labels.reasoning_engine_id="4485309801198256128"' \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --limit=20 \
+  --format="table(timestamp, jsonPayload.message, severity)"
+
+# Query Agent Gateway Routing & Egress Logs
+gcloud logging read \
+  'resource.type="networkservices.googleapis.com/AgentGateway" OR logName:"logs/networkservices.googleapis.com"' \
+  --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
+  --limit=20 \
+  --format="table(timestamp, jsonPayload.message, severity)"
+```
+
+### 2. Spoke Seller Project Logs (`$GOOGLE_CLOUD_PROJECT_SELLERS` / `deepakmichaelstage`)
+Audit Burger and Pizza Reasoning Engine execution logs and incoming mTLS SPIFFE requests:
+```bash
+# Query Burger Seller Agent Execution Logs
+gcloud logging read \
+  'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND resource.labels.reasoning_engine_id="2715395147641651200"' \
+  --project=$GOOGLE_CLOUD_PROJECT_SELLERS \
+  --limit=20 \
+  --format="table(timestamp, jsonPayload.message, severity)"
+
+# Query Pizza Seller Agent Execution Logs
+gcloud logging read \
+  'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND resource.labels.reasoning_engine_id="5638231305805103104"' \
+  --project=$GOOGLE_CLOUD_PROJECT_SELLERS \
+  --limit=20 \
+  --format="table(timestamp, jsonPayload.message, severity)"
 ```
 
 ---
 
-## Troubleshooting & Common Deployment Errors
+## Repository Sync & Upload
 
-### 1. GCS Staging Bucket Creation Error (`storage.buckets.create` denied)
-* **Error**: `403 ... does not have storage.buckets.create access to the Google Cloud project.`
-* **Cause**: The Vertex AI SDK attempts to auto-create a staging bucket (`gs://<project>-staging`) if it does not already exist, which requires `storage.buckets.create` permission.
-* **Fix**: Pre-create the central shared staging bucket using the recommended `gcloud storage` CLI (Step 0) or pass an existing bucket via `--staging-bucket`:
-  ```bash
-  gcloud storage buckets create gs://$GOOGLE_CLOUD_PROJECT_GOVERNANCE-shared-staging \
-    --project=$GOOGLE_CLOUD_PROJECT_GOVERNANCE \
-    --location=$REGION
-  ```
+To push all updated code, isolated packages (`burger_pkg`, `pizza_pkg`), and documentation to GitHub:
 
-### 2. AI Platform Reasoning Engine Listing Error (`aiplatform.reasoningEngines.list` denied)
-* **Error**: `403 Permission 'aiplatform.reasoningEngines.list' denied on resource '//aiplatform.googleapis.com/projects/...'`
-* **Cause**: The deploying identity lacks permissions to list existing Reasoning Engines during the cleanup phase.
-* **Fix**: Ensure the deploying user or service account has been granted **Vertex AI Administrator** (`roles/aiplatform.admin`) or **AI Platform User** (`roles/aiplatform.user`). The deployment scripts include graceful exception handling to skip cleanup if listing permissions are absent.
-
-### 3. Missing Python Requirements (`cloudpickle`, `pydantic`)
-* **Error**: `The following requirements are missing: {'cloudpickle', 'pydantic'}`
-* **Fix**: `cloudpickle` and `pydantic` are explicitly defined in the `requirements` configuration block of `deploy_sellers_adk.py` and `deploy_concierge_adk.py`.
-
-### 4. GCS Bucket Access / ADC Authentication Mismatch (`storage.buckets.get` denied)
-* **Error**: `403 GET ... does not have storage.buckets.get access to the Google Cloud Storage bucket.`
-* **Cause**: Application Default Credentials (ADC) are authenticated as an alternate account (`admin@deepakmichael.altostrat.com`) which lacks permissions on the shared staging bucket, even though your active `gcloud` CLI user has access.
-* **Fix**: Re-authenticate Application Default Credentials using your active Google Cloud account:
-  ```bash
-  gcloud auth application-default login
-  ```
-
-
+```bash
+git add README.md deploy_burger.py deploy_pizza.py deploy_concierge_adk.py burger_pkg/ pizza_pkg/ test_concierge_order.py iap_agent_policy.json
+git commit -m "Update documentation, cross-project Agent Gateway validation, IAM policies, and isolated packages"
+git push origin main
+```

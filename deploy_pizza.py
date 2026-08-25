@@ -95,7 +95,7 @@ def main():
                 if next_val is not None:
                     input = next_val
                 else:
-                    str_vals = [v for v in input.values() if isinstance(v, str)]
+                    str_vals = [v for k, v in input.items() if isinstance(v, str) and k not in ("user", "userId", "user_id", "author", "role", "session_id", "sessionId")]
                     if str_vals:
                         input = str_vals[0]
                     else:

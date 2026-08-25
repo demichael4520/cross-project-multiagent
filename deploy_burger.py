@@ -45,7 +45,7 @@ def main():
         http_options=dict(api_version="v1beta1"),
     )
 
-    from remote_seller_agents.burger_agent.agent_adk import burger_agent as burger_adk_agent
+    from burger_pkg.agent_adk import burger_agent as burger_adk_agent
     from vertexai.preview import reasoning_engines
 
     class PlaygroundCompatibleAdkAgent:
@@ -96,7 +96,7 @@ def main():
                 if next_val is not None:
                     input = next_val
                 else:
-                    str_vals = [v for v in input.values() if isinstance(v, str)]
+                    str_vals = [v for k, v in input.items() if isinstance(v, str) and k not in ("user", "userId", "user_id", "author", "role", "session_id", "sessionId")]
                     if str_vals:
                         input = str_vals[0]
                     else:
@@ -153,7 +153,7 @@ def main():
             "cloudpickle>=3.0.0",
             "pydantic>=2.0.0",
         ],
-        "extra_packages": ["./remote_seller_agents/burger_agent"],
+        "extra_packages": ["./burger_pkg"],
         "identity_type": "AGENT_IDENTITY",
         "agent_gateway_config": {
             "agent_to_anywhere_config": {
