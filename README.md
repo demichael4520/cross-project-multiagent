@@ -98,9 +98,12 @@ Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust m
 #### Summary of IAM Permissions and Roles Used
 | Role / Permission | Target Resource | Principal / Subject | Purpose |
 | :--- | :--- | :--- | :--- |
-| `roles/iap.egressor` | Agent Registry Agent Resource (`--agent`) | Agent SPIFFE Principals | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to agent runtimes. |
+| `ar_agw_cross_project_sa` (Custom) | Gateway Project (`networkservices.agentGateways.get`, `networkservices.operations.get`) | Spoke Project Service Agents | Enables cross-project Agent Gateway lookup and operation status validation. |
+| `roles/networkservices.viewer` | Gateway Project | Spoke Project Service Agents | Allows viewing network service objects across projects. |
+| `roles/iap.egressor` | Agent Registry Agent Resource (`--agent`) | Agent SPIFFE Principals / Concierge Engine Principal | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to agent runtimes. |
+| `roles/aiplatform.user` | Reasoning Engines (Spoke Runtimes) | Concierge Engine Principal & Service Accounts | Grants invocation and user access permissions on spoke reasoning engine runtimes. |
+| `roles/agentregistry.viewer` | Governance/Gateway Project | Concierge Service Accounts & PrincipalSet | Enables dynamic auto-discovery of registered agent endpoints from the Agent Registry. |
 | `roles/aiplatform.agentContextEditor` | Reasoning Engines | Agent SPIFFE Principals | Allows agents to invoke, query, and pass conversation context. |
-| `roles/aiplatform.viewer` | Reasoning Engines | Agent SPIFFE Principals | Allows reading reasoning engine resource metadata and health status. |
 | `aiplatform.reasoningEngines.query` / `streamQuery` | Reasoning Engine Runtimes | Authenticated Agent Principals | Enables execution of reasoning engine methods. |
 
 ---

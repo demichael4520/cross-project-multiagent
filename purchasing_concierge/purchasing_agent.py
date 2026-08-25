@@ -52,7 +52,7 @@ class PurchasingAgent:
 
     def create_agent(self) -> Agent:
         return Agent(
-            model="gemini-3.5-flash-lite",
+            model="gemini-2.5-flash",
             name="purchasing_agent",
             instruction=self.root_instruction,
             before_model_callback=self.before_model_callback,
@@ -212,10 +212,22 @@ Current active seller agent: {current_agent["active_agent"]}
         if not agent_id:
             return f"Error: ID for agent {agent_name} not found"
 
+        if not agent_id.startswith("projects/"):
+            seller_project = os.getenv("SELLER_PROJECT_ID", "1015660890618")
+            location = os.getenv("AGENT_REGION", "us-central1")
+            agent_id = f"projects/{seller_project}/locations/{location}/reasoningEngines/{agent_id}"
+
         try:
             print(f"Calling remote agent {agent_name} (ID: {agent_id}) with task: {task}")
             if agent_id.startswith("projects/"):
-                target_project = agent_id.split("/")[1]
+                parts = agent_id.split("/")
+                target_project = parts[1]
+                if target_project == "439077346891":
+                    target_project = "deepakmichaelstage"
+                elif target_project == "1015660890618":
+                    target_project = "deepakmichael-svc1"
+                elif target_project == "114740196141":
+                    target_project = "deepakmichaelprod"
             else:
                 target_project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("AGENT_PROJECT_ID") or "agent-runtime1"
             location = os.getenv("AGENT_REGION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"

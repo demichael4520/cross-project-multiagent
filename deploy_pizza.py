@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import argparse
+import os
+os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+import vertexai
+import agentplatform
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def main():
+    parser = argparse.ArgumentParser(description="Deploy Pizza Seller Agent with Agent Identity and Agent Gateway")
+    parser.add_argument("--project", required=True, help="Google Cloud Project ID for deployment (e.g. deepakmichael-svc1)")
+    parser.add_argument("--region", required=True, help="Google Cloud Region")
+    parser.add_argument("--governance-project", required=True, help="Governance/Gateway Project ID (e.g. deepakmichaelprod)")
+    parser.add_argument("--gateway", required=True, help="Agent Gateway name")
+    args = parser.parse_args()
+
+    staging_bucket_uri = f"gs://{args.governance_project}-shared-staging"
+
+    vertexai.init(
+        project=args.project,
+        location=args.region,
+        staging_bucket=staging_bucket_uri,
+    )
+
+    client = agentplatform.Client(
+        project=args.project,
+        location=args.region,
+        http_options=dict(api_version="v1beta1"),
+    )
+
+    from pizza_pkg.agent_adk import pizza_agent as pizza_adk_agent
+    from vertexai.preview import reasoning_engines
+
+    class PlaygroundCompatibleAdkAgent:
+        agent_framework = "google-adk"
+
+        def __init__(self, app):
+            self.app = app
+
+        def set_up(self):
+            if hasattr(self.app, "set_up"):
+                self.app.set_up()
+
+        def register_operations(self) -> dict[str, list[str]]:
+            return {
+                "": ["query", "async_query"],
+                "stream": ["stream_query", "async_stream_query"],
+            }
+
+        def _parse_args(self, input = None, user_id = None, session_id = None, **kwargs):
+            kw_user_id = kwargs.pop("user_id", None)
+            kw_userId = kwargs.pop("userId", None)
+            user_id = user_id or kw_user_id or kw_userId
+
+            kw_session_id = kwargs.pop("session_id", None)
+            kw_sessionId = kwargs.pop("sessionId", None)
+            session_id = session_id or kw_session_id or kw_sessionId
+
+            kw_message = kwargs.pop("message", None)
+            kw_input = kwargs.pop("input", None)
+            if input is None:
+                input = kw_message or kw_input
+
+            if input is None:
+                 raise ValueError("Either 'input' or 'message' must be provided")
+
+            while isinstance(input, dict):
+                user_id = user_id or input.get("user_id") or input.get("userId")
+                session_id = session_id or input.get("session_id") or input.get("sessionId")
+
+                next_val = input.get("message")
+                if next_val is None:
+                    next_val = input.get("input")
+                if next_val is None:
+                    next_val = input.get("prompt")
+                if next_val is None:
+                    next_val = input.get("text")
+
+                if next_val is not None:
+                    input = next_val
+                else:
+                    str_vals = [v for v in input.values() if isinstance(v, str)]
+                    if str_vals:
+                        input = str_vals[0]
+                    else:
+                        input = str(input)
+                    break
+
+            message = str(input) if input is not None else ""
+            effective_user_id = user_id or "console-tester-user"
+            effective_session_id = session_id
+
+            return message, effective_user_id, effective_session_id, kwargs
+
+        def query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
+            message, effective_user_id, effective_session_id, clean_kwargs = self._parse_args(input, user_id, session_id, **kwargs)
+            try:
+                res = self.app.query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs)
+                if isinstance(res, dict):
+                    return res
+                return {"output": str(res)}
+            except Exception:
+                final_text = ""
+                for chunk in self.app.stream_query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs):
+                    if isinstance(chunk, dict) and isinstance(chunk.get("content"), dict):
+                        parts = chunk["content"].get("parts", [])
+                        if isinstance(parts, list):
+                            for part in parts:
+                                if isinstance(part, dict) and "text" in part:
+                                    if not part.get("thought") and not part.get("raw_thought"):
+                                        final_text += part["text"]
+                return {"output": final_text}
+
+        def stream_query(self, input = None, user_id = None, session_id = None, **kwargs):
+            message, effective_user_id, effective_session_id, clean_kwargs = self._parse_args(input, user_id, session_id, **kwargs)
+            for chunk in self.app.stream_query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs):
+                yield chunk
+
+        async def async_query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
+            return self.query(input=input, user_id=user_id, session_id=session_id, **kwargs)
+
+        async def async_stream_query(self, input = None, user_id = None, session_id = None, **kwargs):
+            for chunk in self.stream_query(input=input, user_id=user_id, session_id=session_id, **kwargs):
+                yield chunk
+
+    pizza_app = reasoning_engines.AdkApp(agent=pizza_adk_agent, enable_tracing=False)
+    pizza_playground = PlaygroundCompatibleAdkAgent(pizza_app)
+
+    gateway_path = args.gateway if args.gateway.startswith("projects/") else f"projects/{args.governance_project}/locations/{args.region}/agentGateways/{args.gateway}"
+
+    pizza_config = {
+        "staging_bucket": staging_bucket_uri,
+        "display_name": "pizza-seller-agent-adk",
+        "requirements": [
+            "google-cloud-aiplatform[agent_engines]>=1.149.0",
+            "google-adk[a2a,agent-identity]==1.34.0",
+            "cloudpickle>=3.0.0",
+            "pydantic>=2.0.0",
+        ],
+        "extra_packages": ["./pizza_pkg"],
+        "identity_type": "AGENT_IDENTITY",
+        "agent_gateway_config": {
+            "agent_to_anywhere_config": {
+                "agent_gateway": gateway_path
+            }
+        },
+        "env_vars": {
+            "GOOGLE_GENAI_USE_VERTEXAI": "true",
+            "AGENT_PROJECT_ID": args.project,
+            "AGENT_REGION": args.region,
+        }
+    }
+
+    print("Deploying Pizza Agent with Agent Identity & Agent Gateway...")
+    deployed_pizza = client.agent_engines.create(agent=pizza_playground, config=pizza_config)
+    pizza_name = deployed_pizza.api_resource.name
+    print(f"Pizza Agent deployed: {pizza_name}")
+
+    with open("pizza_agent.env", "w") as f:
+        f.write(f"PIZZA_SELLER_AGENT_ID={pizza_name}\n")
+    print("Saved pizza agent ID to pizza_agent.env")
+
+if __name__ == "__main__":
+    main()
