@@ -11,17 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# Monkey-patch ADK Runner to force auto-creation of sessions
-try:
-    from google.adk import runners
-    original_init = runners.Runner.__init__
-    def patched_init(self, *args, **kwargs):
-        kwargs['auto_create_session'] = True
-        original_init(self, *args, **kwargs)
-    runners.Runner.__init__ = patched_init
-    print("Successfully monkey-patched ADK Runner to auto_create_session=True")
-except Exception as e:
-    print(f"Failed to monkey-patch ADK Runner: {e}")
 
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel
@@ -55,7 +44,7 @@ def create_pizza_order(order_items: list[OrderItem]) -> str:
 
 pizza_agent = LlmAgent(
     name="pizza_seller_agent",
-    model="gemini-3.5-flash-lite",
+    model="gemini-2.5-flash",
     instruction="""
 You are a specialized assistant for a pizza store.
 Your sole purpose is to answer questions about what is available on pizza menu and price also handle order creation.
