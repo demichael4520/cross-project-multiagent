@@ -156,17 +156,36 @@ def main():
                                     text_val = part["text"]
                                     if text_val:
                                         has_yielded_text = True
-                                        yield text_val
+                                        yield {
+                                            "output": text_val,
+                                            "text": text_val,
+                                            "content": {
+                                                "parts": [{"text": text_val}],
+                                                "role": "model"
+                                            }
+                                        }
                 elif isinstance(chunk, str) and chunk:
                     has_yielded_text = True
-                    yield chunk
+                    yield {
+                        "output": chunk,
+                        "text": chunk,
+                        "content": {
+                            "parts": [{"text": chunk}],
+                            "role": "model"
+                        }
+                    }
 
             if not has_yielded_text:
                 res = self.app.query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs)
-                if isinstance(res, dict):
-                    yield res.get("output", str(res))
-                else:
-                    yield str(res)
+                out_text = res.get("output", str(res)) if isinstance(res, dict) else str(res)
+                yield {
+                    "output": out_text,
+                    "text": out_text,
+                    "content": {
+                        "parts": [{"text": out_text}],
+                        "role": "model"
+                    }
+                }
 
         async def async_query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
             return self.query(input=input, user_id=user_id, session_id=session_id, **kwargs)
