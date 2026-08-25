@@ -160,7 +160,8 @@ def main():
             for chunk in self.stream_query(input=input, user_id=user_id, session_id=session_id, **kwargs):
                 yield chunk
 
-    pizza_app = reasoning_engines.AdkApp(agent=pizza_adk_agent, enable_tracing=False)
+    from google.adk.sessions import InMemorySessionService
+    pizza_app = reasoning_engines.AdkApp(agent=pizza_adk_agent, session_service_builder=lambda: InMemorySessionService(), enable_tracing=False)
     pizza_playground = PlaygroundCompatibleAdkAgent(pizza_app)
 
     gateway_path = args.gateway if args.gateway.startswith("projects/") else f"projects/{args.governance_project}/locations/{args.region}/agentGateways/{args.gateway}"

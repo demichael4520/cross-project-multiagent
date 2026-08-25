@@ -56,9 +56,11 @@ def main():
 
     from purchasing_concierge.agent import root_agent
     from vertexai.preview import reasoning_engines
+    from google.adk.sessions import InMemorySessionService
 
     adk_app = reasoning_engines.AdkApp(
         agent=root_agent,
+        session_service_builder=lambda: InMemorySessionService(),
         enable_tracing=False,
     )
 
