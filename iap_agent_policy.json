@@ -4,8 +4,8 @@
       {
         "role": "roles/iap.egressor",
         "members": [
-          "principal://agents.global.org-1015654926499.system.id.goog/resources/aiplatform/projects/114740196141/locations/us-central1/reasoningEngines/4714993382194151424",
-          "principalSet://agents.global.org-1015654926499.system.id.goog/attribute.platformContainer/aiplatform/projects/114740196141"
+          "principal://agents.global.org-<ORG_ID>.system.id.goog/resources/aiplatform/projects/<PROJECT_NUMBER_CONCIERGE>/locations/us-central1/reasoningEngines/<CONCIERGE_ENGINE_ID>",
+          "principalSet://agents.global.org-<ORG_ID>.system.id.goog/attribute.platformContainer/aiplatform/projects/<PROJECT_NUMBER_CONCIERGE>"
         ]
       }
     ]

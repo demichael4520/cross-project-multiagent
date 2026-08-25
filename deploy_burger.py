@@ -24,9 +24,9 @@ load_dotenv()
 
 def main():
     parser = argparse.ArgumentParser(description="Deploy Burger Seller Agent with Agent Identity and Agent Gateway")
-    parser.add_argument("--project", required=True, help="Google Cloud Project ID for deployment (e.g. deepakmichael-svc1)")
+    parser.add_argument("--project", required=True, help="Google Cloud Project ID for deployment (e.g. agent-runtime2)")
     parser.add_argument("--region", required=True, help="Google Cloud Region")
-    parser.add_argument("--governance-project", required=True, help="Governance/Gateway Project ID (e.g. deepakmichaelprod)")
+    parser.add_argument("--governance-project", required=True, help="Governance/Gateway Project ID (e.g. centralized-governance-project)")
     parser.add_argument("--gateway", required=True, help="Agent Gateway name")
     args = parser.parse_args()
 

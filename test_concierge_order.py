@@ -12,11 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import vertexai
 from vertexai.preview import reasoning_engines
 
-vertexai.init(project="deepakmichaelprod", location="us-central1")
-engine_name = "projects/114740196141/locations/us-central1/reasoningEngines/4485309801198256128"
+project = os.getenv("PROJECT_CONCIERGE", "agent-runtime1")
+region = os.getenv("REGION", "us-central1")
+engine_id = os.getenv("CONCIERGE_ENGINE_ID", "<CONCIERGE_ENGINE_ID>")
+
+vertexai.init(project=project, location=region)
+engine_name = f"projects/{project}/locations/{region}/reasoningEngines/{engine_id}" if not engine_id.startswith("projects/") else engine_id
 print(f"Connecting to concierge reasoning engine: {engine_name}")
 
 remote_app = reasoning_engines.ReasoningEngine(engine_name)

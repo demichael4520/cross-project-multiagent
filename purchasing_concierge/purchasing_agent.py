@@ -222,14 +222,8 @@ Current active seller agent: {current_agent["active_agent"]}
             if agent_id.startswith("projects/"):
                 parts = agent_id.split("/")
                 target_project = parts[1]
-                if target_project == "439077346891":
-                    target_project = "deepakmichaelstage"
-                elif target_project == "1015660890618":
-                    target_project = "deepakmichael-svc1"
-                elif target_project == "114740196141":
-                    target_project = "deepakmichaelprod"
             else:
-                target_project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("AGENT_PROJECT_ID") or "agent-runtime1"
+                target_project = os.getenv("PROJECT_SELLERS") or os.getenv("GOOGLE_CLOUD_PROJECT") or "agent-runtime2"
             location = os.getenv("AGENT_REGION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
             vertexai.init(project=target_project, location=location)
             engine = reasoning_engines.ReasoningEngine(agent_id)
