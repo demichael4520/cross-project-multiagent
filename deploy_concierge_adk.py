@@ -194,6 +194,8 @@ def main():
         "requirements": [
             "google-cloud-aiplatform[agent_engines]>=1.149.0",
             "google-adk[a2a,agent-identity]==1.34.0",
+            "httpx>=0.28.1",
+            "requests>=2.32.0",
             "cloudpickle",
             "pydantic",
         ],
