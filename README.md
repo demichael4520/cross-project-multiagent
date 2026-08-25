@@ -107,7 +107,7 @@ gcloud projects add-iam-policy-binding $PROJECT_GOVERNANCE \
 
 ---
 
-## Deployment Guide
+## Deployment Guide (Single Terminal in `PROJECT_GOVERNANCE`)
 
 ### Prerequisites
 1. GCP Projects (`PROJECT_GOVERNANCE`, `PROJECT_CONCIERGE`, `PROJECT_SELLERS`) with Vertex AI, Agent Registry, and Network Services APIs enabled.
@@ -221,74 +221,36 @@ The deployed agents include the `PlaygroundCompatibleAdkAgent` wrapper, which ex
 1. Open the [Google Cloud Console](https://console.cloud.google.com/).
 2. Navigate to **Vertex AI > Reasoning Engines** in project `$PROJECT_CONCIERGE`.
 3. Click on **`purchasing-concierge-adk`**.
-4. In the **Playground** chat window on the right side, type:
-   > *"I confirm ordering 1 Classic Cheeseburger for IDR 85K from burger seller agent and 1 Pepperoni Pizza for IDR 140K from pizza seller agent. Please place both orders now."*
-5. The agent will execute the cross-project A2A workflow via Agent Gateway and return full order confirmation receipts (`Order ID`).
-
-### Testing via REST API (`curl`):
-```bash
-export CONCIERGE_ENGINE_ID="4485309801198256128"
-
-curl -X POST \
-  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
-  -H "Content-Type: application/json" \
-  https://${REGION}-aiplatform.googleapis.com/v1beta1/projects/${PROJECT_CONCIERGE}/locations/${REGION}/reasoningEngines/${CONCIERGE_ENGINE_ID}:query \
-  -d '{
-    "input": {
-      "input": "I confirm ordering 1 Classic Cheeseburger for IDR 85K from burger seller agent and 1 Pepperoni Pizza for IDR 140K from pizza seller agent. Please place both orders now.",
-      "user_id": "console-tester-user"
-    }
-  }'
-```
+4. In the **Playground** chat window on the right side:
+   - **Test 1 (Burger - ALLOW)**: Type:
+     > *"I confirm ordering 1 Classic Cheeseburger for IDR 85K from burger seller agent. Please place this order now."*
+     > **Result**: Returns 200 OK receipt with Order ID.
+   - **Test 2 (Pizza - BLOCK)**: Type:
+     > *"I confirm ordering 1 Pepperoni Pizza for IDR 140K from pizza seller agent. Please place this order now."*
+     > **Result**: Blocked by IAP Default Deny (HTTP 403 Forbidden).
+   - **Test 3 (Pizza - Dynamic ALLOW Update)**: Add IAP egress binding for `pizza-seller-agent`:
+     ```bash
+     gcloud beta iap web add-iam-policy-binding \
+       --resource-type=agent-registry \
+       --agent=pizza-seller-agent \
+       --region=$REGION \
+       --project=$PROJECT_GOVERNANCE \
+       --role="roles/iap.egressor" \
+       --member="$CONCIERGE_SPIFFE_PRINCIPAL"
+     ```
+     Re-type the pizza order prompt in Playground.
+     > **Result**: Returns 200 OK receipt with Order ID immediately without redeploying!
 
 ---
 
 ## Cloud Logging Validation
 
-You can audit inter-agent routing, SPIFFE identity verification, and execution logs across governance, concierge, and spoke seller projects using `gcloud logging read`.
+Audit inter-agent routing and centralized authorization decisions in `$PROJECT_GOVERNANCE`:
 
-### 1. Governance Project Logs (`$PROJECT_GOVERNANCE`)
-Audit Agent Gateway routing and egress authorization decisions:
 ```bash
-# Query Agent Gateway Routing & Egress Logs
-gcloud logging read \
-  'resource.type="networkservices.googleapis.com/AgentGateway" OR logName:"logs/networkservices.googleapis.com"' \
-  --project=$PROJECT_GOVERNANCE \
-  --limit=20 \
-  --format="table(timestamp, jsonPayload.message, severity)"
-
-# Query IAP Policy Audit Logs
 gcloud logging read \
   'logName="projects/'$PROJECT_GOVERNANCE'/logs/cloudaudit.googleapis.com%2Fpolicy"' \
   --project=$PROJECT_GOVERNANCE \
   --limit=10 \
-  --format="json"
-```
-
-### 2. Concierge Project Logs (`$PROJECT_CONCIERGE`)
-Audit Purchasing Concierge Reasoning Engine execution logs:
-```bash
-gcloud logging read \
-  'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND resource.labels.reasoning_engine_id="4485309801198256128"' \
-  --project=$PROJECT_CONCIERGE \
-  --limit=20 \
-  --format="table(timestamp, jsonPayload.message, severity)"
-```
-
-### 3. Spoke Seller Project Logs (`$PROJECT_SELLERS`)
-Audit Burger and Pizza Reasoning Engine execution logs and incoming mTLS SPIFFE requests:
-```bash
-# Query Burger Seller Agent Execution Logs
-gcloud logging read \
-  'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND resource.labels.reasoning_engine_id="2715395147641651200"' \
-  --project=$PROJECT_SELLERS \
-  --limit=20 \
-  --format="table(timestamp, jsonPayload.message, severity)"
-
-# Query Pizza Seller Agent Execution Logs
-gcloud logging read \
-  'resource.type="aiplatform.googleapis.com/ReasoningEngine" AND resource.labels.reasoning_engine_id="5638231305805103104"' \
-  --project=$PROJECT_SELLERS \
-  --limit=20 \
-  --format="table(timestamp, jsonPayload.message, severity)"
+  --format="table(timestamp, protoPayload.authenticationInfo.principalEmail, protoPayload.authorizationInfo[0].granted, protoPayload.authorizationInfo[0].resource)"
 ```
