@@ -15,13 +15,7 @@ import json
 import uuid
 from typing import Dict
 import os
-import certifi
 import vertexai
-
-if os.path.exists("/etc/ssl/certs/ca-certificates.crt"):
-    os.environ["SSL_CERT_FILE"] = "/etc/ssl/certs/ca-certificates.crt"
-    os.environ["REQUESTS_CA_BUNDLE"] = "/etc/ssl/certs/ca-certificates.crt"
-    os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = "/etc/ssl/certs/ca-certificates.crt"
 
 from google.adk import Agent
 from google.adk.agents.readonly_context import ReadonlyContext

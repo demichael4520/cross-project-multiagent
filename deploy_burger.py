@@ -161,8 +161,7 @@ def main():
             for chunk in self.stream_query(input=input, user_id=user_id, session_id=session_id, **kwargs):
                 yield chunk
 
-    from google.adk.sessions import InMemorySessionService
-    burger_app = reasoning_engines.AdkApp(agent=burger_adk_agent, session_service_builder=lambda: InMemorySessionService(), enable_tracing=False)
+    burger_app = reasoning_engines.AdkApp(agent=burger_adk_agent, enable_tracing=False)
     burger_playground = PlaygroundCompatibleAdkAgent(burger_app)
     gateway_path = args.gateway if args.gateway.startswith("projects/") else f"projects/{args.governance_project}/locations/{args.region}/agentGateways/{args.gateway}"
 
@@ -184,9 +183,6 @@ def main():
         },
         "env_vars": {
             "GOOGLE_GENAI_USE_VERTEXAI": "true",
-            "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
-            "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
-            "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH": "/etc/ssl/certs/ca-certificates.crt",
             "AGENT_PROJECT_ID": args.project,
             "AGENT_REGION": args.region,
         }
