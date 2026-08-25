@@ -2,7 +2,7 @@
 
 This project implements a secure, cross-project multi-agent purchasing concierge system deployed on **Vertex AI Agent Runtime (Reasoning Engines)** using the Google **Agent Development Kit (ADK)**, **Agent Identity**, and **Agent Gateway**.
 
-It demonstrates **A2A (Agent-to-Agent) Multi-Runtime Orchestration** with **Dynamic Autodiscovery via Agent Registry**, allowing a root orchestrator agent in a central governance project to discover and delegate tasks to specialist agents hosted in separate spoke projects across isolated Reasoning Engine runtimes.
+It demonstrates **A2A (Agent-to-Agent) Multi-Runtime Orchestration** with **Dynamic Autodiscovery via Agent Registry**, allowing a root orchestrator agent in a dedicated concierge project to discover and delegate tasks to specialist agents hosted in separate spoke projects across isolated Reasoning Engine runtimes.
 
 > [!NOTE]
 > **Environment Reference Project Mapping (3-Project Setup)**:
@@ -64,16 +64,46 @@ Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust m
 
 ---
 
+## Cross-Project Egress Gateway IAM Configuration
+
+Following the official Google Cloud documentation for [Configuring Cross-Project Egress Gateway Access](https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/agent-gateway-runtime-deploy#deploy-an-agent):
+
+### Step 1: Create Custom IAM Role in Gateway Project
+```bash
+gcloud iam roles create ar_agw_cross_project_sa \
+  --project=$PROJECT_GOVERNANCE \
+  --title="Runtime Agent Gateway Cross-Project SA" \
+  --description="Custom role for the cross-project service agent to access Agent Gateway" \
+  --permissions="networkservices.agentGateways.get,networkservices.operations.get"
+```
+
+### Step 2: Assign Custom Role to Spoke Runtime Service Agents
+```bash
+# 1. Derive Runtime Service Agent Emails
+export CONCIERGE_AI_SA="service-${PROJECT_NUMBER_CONCIERGE}@gcp-sa-aiplatform.iam.gserviceaccount.com"
+export SELLERS_AI_SA="service-${PROJECT_NUMBER_SELLERS}@gcp-sa-aiplatform.iam.gserviceaccount.com"
+
+# 2. Grant Custom Role in Gateway Project
+gcloud projects add-iam-policy-binding $PROJECT_GOVERNANCE \
+  --member="serviceAccount:${CONCIERGE_AI_SA}" \
+  --role="projects/${PROJECT_GOVERNANCE}/roles/ar_agw_cross_project_sa"
+
+gcloud projects add-iam-policy-binding $PROJECT_GOVERNANCE \
+  --member="serviceAccount:${SELLERS_AI_SA}" \
+  --role="projects/${PROJECT_GOVERNANCE}/roles/ar_agw_cross_project_sa"
+```
+
+---
+
 ## Summary of IAM Permissions and Roles Used
 
 | Role / Permission | Target Resource | Principal / Subject | Purpose |
 | :--- | :--- | :--- | :--- |
-| `ar_agw_cross_project_sa` (Custom Role) | `PROJECT_GOVERNANCE` (`networkservices.agentGateways.get`, `networkservices.operations.get`) | Spoke Project Service Agents | Enables cross-project Agent Gateway lookup and operation status validation. |
-| `roles/networkservices.viewer` | `PROJECT_GOVERNANCE` | Spoke Project Service Agents | Allows viewing network service objects across projects. |
+| `ar_agw_cross_project_sa` (Custom Role) | `PROJECT_GOVERNANCE` (`networkservices.agentGateways.get`, `networkservices.operations.get`) | Spoke Project Service Agents (`service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com`) | Enables cross-project Agent Gateway lookup and operation status validation during agent runtime deployment. |
+| `roles/networkservices.viewer` | `PROJECT_GOVERNANCE` | Spoke Project Service Agents | Predefined alternative containing gateway and operation viewer permissions. |
 | `roles/iap.egressor` | Agent Registry Agent Resource (`--agent`) in `PROJECT_GOVERNANCE` | Concierge Engine Principal (`principal://agents.global.org-1015654926499...`) | Permits the Agent Gateway to egress traffic and pass authentication tokens securely across IAP boundaries to seller agent runtimes. |
 | `roles/aiplatform.user` | Reasoning Engines in `PROJECT_SELLERS` | Concierge Engine Principal & Service Accounts | Grants invocation and user access permissions on spoke reasoning engine runtimes. |
 | `roles/agentregistry.viewer` | `PROJECT_GOVERNANCE` | Concierge Service Accounts & PrincipalSet | Enables dynamic auto-discovery of registered agent endpoints from the Agent Registry. |
-| `roles/aiplatform.agentContextEditor` | Reasoning Engines | Agent SPIFFE Principals | Allows agents to invoke, query, and pass conversation context. |
 
 ---
 
@@ -84,7 +114,7 @@ Both the **Seller Agents** and the **Purchasing Concierge** enforce zero-trust m
 2. `uv` installed for dependency management.
 3. Central Agent Gateway created in `PROJECT_GOVERNANCE`.
 
-### Export Simplified Configuration Variables
+### Export Configuration Variables
 ```bash
 export PROJECT_GOVERNANCE="deepakmichaelprod"
 export PROJECT_CONCIERGE="deepakmichaelprod"
@@ -109,7 +139,7 @@ uv run python deploy_pizza.py \
   --gateway=projects/$PROJECT_GOVERNANCE/locations/$REGION/agentGateways/$GATEWAY_NAME
 ```
 
-### Step 2: Deploy Purchasing Concierge to Governance Project
+### Step 2: Deploy Purchasing Concierge to Concierge Project
 Deploy the root orchestrator to `$PROJECT_CONCIERGE`:
 ```bash
 uv run python deploy_concierge_adk.py \
@@ -261,16 +291,4 @@ gcloud logging read \
   --project=$PROJECT_SELLERS \
   --limit=20 \
   --format="table(timestamp, jsonPayload.message, severity)"
-```
-
----
-
-## Repository Sync & Upload
-
-To push all updated code, isolated packages (`burger_pkg`, `pizza_pkg`), and documentation:
-
-```bash
-git add README.md deploy_burger.py deploy_pizza.py deploy_concierge_adk.py burger_pkg/ pizza_pkg/ test_concierge_order.py iap_agent_policy.json
-git commit -m "Simplify variable names to PROJECT_GOVERNANCE, PROJECT_SELLERS, and PROJECT_CONCIERGE across documentation and code"
-git push origin main
 ```
