@@ -109,28 +109,8 @@ def main():
 
             return message, effective_user_id, effective_session_id, kwargs
 
-        def query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
-            message, effective_user_id, effective_session_id, clean_kwargs = self._parse_args(input, user_id, session_id, **kwargs)
-            try:
-                res = self.app.query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs)
-                if isinstance(res, dict):
-                    return res
-                return {"output": str(res)}
-            except Exception:
-                final_text = ""
-                for chunk in self.app.stream_query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs):
-                    if isinstance(chunk, dict) and isinstance(chunk.get("content"), dict):
-                        parts = chunk["content"].get("parts", [])
-                        if isinstance(parts, list):
-                            for part in parts:
-                                if isinstance(part, dict) and "text" in part:
-                                    if not part.get("thought") and not part.get("raw_thought"):
-                                        final_text += part["text"]
-                return {"output": final_text}
-
         def stream_query(self, input = None, user_id = None, session_id = None, **kwargs):
             message, effective_user_id, effective_session_id, clean_kwargs = self._parse_args(input, user_id, session_id, **kwargs)
-            has_yielded_text = False
             for chunk in self.app.stream_query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs):
                 if isinstance(chunk, dict) and isinstance(chunk.get("content"), dict):
                     parts = chunk["content"].get("parts", [])
@@ -140,7 +120,6 @@ def main():
                                 if not part.get("thought") and not part.get("raw_thought"):
                                     text_val = part["text"]
                                     if text_val:
-                                        has_yielded_text = True
                                         yield {
                                             "output": text_val,
                                             "text": text_val,
@@ -150,7 +129,6 @@ def main():
                                             }
                                         }
                 elif isinstance(chunk, str) and chunk:
-                    has_yielded_text = True
                     yield {
                         "output": chunk,
                         "text": chunk,
@@ -160,17 +138,21 @@ def main():
                         }
                     }
 
-            if not has_yielded_text:
-                res = self.app.query(message=message, user_id=effective_user_id, session_id=effective_session_id, **clean_kwargs)
-                out_text = res.get("output", str(res)) if isinstance(res, dict) else str(res)
-                yield {
-                    "output": out_text,
-                    "text": out_text,
-                    "content": {
-                        "parts": [{"text": out_text}],
-                        "role": "model"
-                    }
+        def query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
+            final_text = ""
+            for item in self.stream_query(input=input, user_id=user_id, session_id=session_id, **kwargs):
+                if isinstance(item, dict) and "output" in item:
+                    final_text += item["output"]
+                elif isinstance(item, str):
+                    final_text += item
+            return {
+                "output": final_text,
+                "text": final_text,
+                "content": {
+                    "parts": [{"text": final_text}],
+                    "role": "model"
                 }
+            }
 
         async def async_query(self, input = None, user_id = None, session_id = None, **kwargs) -> dict:
             return self.query(input=input, user_id=user_id, session_id=session_id, **kwargs)
