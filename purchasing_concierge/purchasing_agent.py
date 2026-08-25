@@ -15,6 +15,10 @@ import json
 import uuid
 from typing import Dict
 import os
+
+os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+
 import vertexai
 
 from google.adk import Agent

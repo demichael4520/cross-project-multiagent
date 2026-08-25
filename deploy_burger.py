@@ -184,6 +184,8 @@ def main():
         },
         "env_vars": {
             "GOOGLE_GENAI_USE_VERTEXAI": "true",
+            "GOOGLE_API_USE_CLIENT_CERTIFICATE": "false",
+            "GOOGLE_API_USE_MTLS_ENDPOINT": "never",
             "AGENT_PROJECT_ID": args.project,
             "AGENT_REGION": args.region,
         }
