@@ -15,66 +15,57 @@
     "stateTransitionHistory": false
   },
   "authentication": {
-    "schemes": ["Bearer"]
+    "schemes": [
+      "Bearer"
+    ]
   },
-  "defaultInputModes": ["text"],
-  "defaultOutputModes": ["text"],
+  "defaultInputModes": [
+    "text"
+  ],
+  "defaultOutputModes": [
+    "text"
+  ],
   "skills": [
     {
       "id": "get_burger_menu",
       "name": "get_burger_menu",
       "description": "Retrieves the full menu of available burgers and their prices in IDR.",
-      "tags": ["menu", "food", "pricing"],
+      "tags": [
+        "menu",
+        "food",
+        "pricing"
+      ],
       "examples": [
         "What burgers are available?",
         "Can I see the burger menu and prices?"
       ],
-      "inputModes": ["text"],
-      "outputModes": ["text"],
-      "parameters": {
-        "type": "object",
-        "properties": {}
-      }
+      "inputModes": [
+        "text"
+      ],
+      "outputModes": [
+        "text"
+      ]
     },
     {
       "id": "create_burger_order",
       "name": "create_burger_order",
       "description": "Places an order for one or more burger menu items and returns an order confirmation ID.",
-      "tags": ["order", "food", "burger", "checkout"],
+      "tags": [
+        "order",
+        "food",
+        "burger",
+        "checkout"
+      ],
       "examples": [
         "Order 1 Classic Cheeseburger",
         "I would like to order 2 Double Cheeseburgers"
       ],
-      "inputModes": ["text"],
-      "outputModes": ["text"],
-      "parameters": {
-        "type": "object",
-        "required": ["order_items"],
-        "properties": {
-          "order_items": {
-            "type": "array",
-            "description": "List of burger items, quantities, and prices to order.",
-            "items": {
-              "type": "object",
-              "required": ["name", "quantity", "price"],
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "Menu item name (e.g. 'Classic Cheeseburger', 'Double Cheeseburger', 'Spicy Chicken Burger', 'Spicy Cajun Burger')."
-                },
-                "quantity": {
-                  "type": "integer",
-                  "description": "Number of items."
-                },
-                "price": {
-                  "type": "integer",
-                  "description": "Unit price in IDR."
-                }
-              }
-            }
-          }
-        }
-      }
+      "inputModes": [
+        "text"
+      ],
+      "outputModes": [
+        "text"
+      ]
     }
   ]
 }
