@@ -260,8 +260,8 @@ Audit inter-agent routing and centralized authorization decisions in `$PROJECT_G
 
 ```bash
 gcloud logging read \
-  'logName="projects/'$PROJECT_GOVERNANCE'/logs/cloudaudit.googleapis.com%2Fpolicy"' \
+  'logName="projects/'$PROJECT_GOVERNANCE'/logs/cloudaudit.googleapis.com%2Fdata_access" AND protoPayload.serviceName="iap.googleapis.com"' \
   --project=$PROJECT_GOVERNANCE \
   --limit=10 \
-  --format="table(timestamp, protoPayload.authenticationInfo.principalEmail, protoPayload.authorizationInfo[0].granted, protoPayload.authorizationInfo[0].resource)"
+  --format="table(timestamp.date('%Y-%m-%d %H:%M:%S'):label=TIME, protoPayload.authenticationInfo.principalSubject:label=SPIFFE_CALLER, protoPayload.authorizationInfo[0].granted:label=GRANTED, protoPayload.authorizationInfo[0].permission:label=PERMISSION, protoPayload.metadata.dryRun:label=DRY_RUN, protoPayload.status.message:label=STATUS)"
 ```
