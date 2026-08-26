@@ -263,5 +263,5 @@ gcloud logging read \
   'logName="projects/'$PROJECT_GOVERNANCE'/logs/cloudaudit.googleapis.com%2Fdata_access" AND protoPayload.serviceName="iap.googleapis.com"' \
   --project=$PROJECT_GOVERNANCE \
   --limit=10 \
-  --format="table(timestamp.date('%Y-%m-%d %H:%M:%S'):label=TIME, protoPayload.authenticationInfo.principalSubject:label=SPIFFE_CALLER, protoPayload.authorizationInfo[0].granted:label=GRANTED, protoPayload.authorizationInfo[0].permission:label=PERMISSION, protoPayload.metadata.dryRun:label=DRY_RUN, protoPayload.status.message:label=STATUS)"
+  --format="table(timestamp.date('%Y-%m-%d %H:%M:%S'):label=TIME, protoPayload.authenticationInfo.principalSubject:label=SPIFFE_CALLER, protoPayload.authorizationInfo[0].granted:label=GRANTED, protoPayload.metadata.dryRun:label=DRY_RUN, protoPayload.status.message:label=STATUS)"
 ```
