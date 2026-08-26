@@ -4,18 +4,33 @@
   "description": "Specialized seller agent for browsing burger menus, checking pricing, and placing orders.",
   "version": "1.0.0",
   "url": "https://us-central1-aiplatform.mtls.googleapis.com/v1/projects/439077346891/locations/us-central1/reasoningEngines/1226814733307346944",
-  "protocolBinding": "JSONRPC",
+  "provider": {
+    "organization": "Burger Store",
+    "url": "https://burger.example.com"
+  },
+  "documentationUrl": "https://burger.example.com/docs",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "stateTransitionHistory": false
+  },
+  "authentication": {
+    "schemes": ["Bearer"]
+  },
   "defaultInputModes": ["text"],
   "defaultOutputModes": ["text"],
-  "capabilities": {
-    "streaming": true
-  },
   "skills": [
     {
       "id": "get_burger_menu",
       "name": "get_burger_menu",
       "description": "Retrieves the full menu of available burgers and their prices in IDR.",
       "tags": ["menu", "food", "pricing"],
+      "examples": [
+        "What burgers are available?",
+        "Can I see the burger menu and prices?"
+      ],
+      "inputModes": ["text"],
+      "outputModes": ["text"],
       "parameters": {
         "type": "object",
         "properties": {}
@@ -26,6 +41,12 @@
       "name": "create_burger_order",
       "description": "Places an order for one or more burger menu items and returns an order confirmation ID.",
       "tags": ["order", "food", "burger", "checkout"],
+      "examples": [
+        "Order 1 Classic Cheeseburger",
+        "I would like to order 2 Double Cheeseburgers"
+      ],
+      "inputModes": ["text"],
+      "outputModes": ["text"],
       "parameters": {
         "type": "object",
         "required": ["order_items"],
