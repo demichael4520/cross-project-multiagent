@@ -51,14 +51,25 @@ Save this configuration as `burger_agent_card.json`.
     "pushNotifications": false
   },
   "securitySchemes": {
-    "bearerAuth": {
-      "type": "http",
-      "scheme": "bearer"
+    "googleOAuth": {
+      "type": "oauth2",
+      "description": "Google Cloud OAuth 2.0 Authentication",
+      "flows": {
+        "authorizationCode": {
+          "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+          "tokenUrl": "https://oauth2.googleapis.com/token",
+          "scopes": {
+            "https://www.googleapis.com/auth/cloud-platform": "Access to Google Cloud Platform"
+          }
+        }
+      }
     }
   },
   "security": [
     {
-      "bearerAuth": []
+      "googleOAuth": [
+        "https://www.googleapis.com/auth/cloud-platform"
+      ]
     }
   ],
   "defaultInputModes": [
@@ -147,16 +158,19 @@ gcloud alpha agent-registry services update burger-seller-agent \
 
 ---
 
-## 3. OAuth 2.0 Credentials for Gemini Enterprise
+## 3. OAuth 2.0 Configuration for Gemini Enterprise
 
-When importing an agent with `securitySchemes`, Gemini Enterprise requires OAuth client credentials to acquire access tokens for calling Google Cloud APIs:
+When importing an agent with `securitySchemes`, Gemini Enterprise requires OAuth client details to acquire access tokens for calling Google Cloud APIs:
 
-| Credential | Value |
-| :--- | :--- |
-| **Client ID** | `<YOUR_OAUTH_CLIENT_ID>` |
-| **Client Secret** | `<YOUR_OAUTH_CLIENT_SECRET>` |
+| Configuration Field | Value | Description |
+| :--- | :--- | :--- |
+| **Client ID** | `<YOUR_OAUTH_CLIENT_ID>` | OAuth 2.0 Web Client ID in the GCP Project |
+| **Client Secret** | `<YOUR_OAUTH_CLIENT_SECRET>` | OAuth 2.0 Web Client Secret |
+| **Authorization URL** | `https://accounts.google.com/o/oauth2/v2/auth` | Google OAuth 2.0 Authorization Endpoint |
+| **Token URL** | `https://oauth2.googleapis.com/token` | Google OAuth 2.0 Token Exchange Endpoint |
+| **Scopes** | `https://www.googleapis.com/auth/cloud-platform` | Scope required to invoke Vertex AI APIs |
 
-*(To create a new client, use Google Cloud Console > APIs & Services > Credentials > Create Credentials > OAuth client ID > Web application).*
+*(These URLs and scopes are now pre-populated in the Agent Card under `securitySchemes.googleOAuth.flows.authorizationCode`).*
 
 ---
 
