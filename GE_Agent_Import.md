@@ -15,7 +15,7 @@ Save this configuration as `burger_agent_card.json`.
   "version": "1.0.0",
   "protocolVersion": "0.3.0",
   "preferredTransport": "JSONRPC",
-  "url": "https://us-central1-aiplatform.googleapis.com/v1/projects/439077346891/locations/us-central1/reasoningEngines/1226814733307346944",
+  "url": "https://us-central1-aiplatform.googleapis.com/v1/projects/439077346891/locations/us-central1/reasoningEngines/1226814733307346944:streamQuery",
   "provider": {
     "organization": "Burger Store",
     "url": "https://burger.example.com"
