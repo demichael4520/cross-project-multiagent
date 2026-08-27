@@ -15,14 +15,25 @@
     "pushNotifications": false
   },
   "securitySchemes": {
-    "bearerAuth": {
-      "type": "http",
-      "scheme": "bearer"
+    "googleOAuth": {
+      "type": "oauth2",
+      "description": "Google Cloud OAuth 2.0 Authentication",
+      "flows": {
+        "authorizationCode": {
+          "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+          "tokenUrl": "https://oauth2.googleapis.com/token",
+          "scopes": {
+            "https://www.googleapis.com/auth/cloud-platform": "Access to Google Cloud Platform"
+          }
+        }
+      }
     }
   },
   "security": [
     {
-      "bearerAuth": []
+      "googleOAuth": [
+        "https://www.googleapis.com/auth/cloud-platform"
+      ]
     }
   ],
   "defaultInputModes": ["text/plain"],
