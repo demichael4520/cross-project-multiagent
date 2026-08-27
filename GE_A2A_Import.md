@@ -63,7 +63,7 @@ burger_a2a_service/
 
 ### 1.2 `requirements.txt`
 ```text
-a2a-sdk>=0.3.0
+a2a-sdk==0.3.0
 google-adk>=1.7.0
 google-genai>=1.0.0
 pydantic>=2.0.0
