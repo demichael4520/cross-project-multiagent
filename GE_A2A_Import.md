@@ -4,46 +4,101 @@ This document is the definitive guide for building, deploying, and importing a *
 
 ---
 
-## Why Cloud Run for A2A? (Architecture Background)
+## Architectural Foundations: A2A, Agent Engine, and Gemini Enterprise
 
-A critical architectural distinction exists between **Vertex AI Agent Engine (Reasoning Engine)** and **A2A Agents**:
+### 1. The Core Rule: Gemini Enterprise Only Supports A2A Agents
+A fundamental rule governs **Gemini Enterprise (Discovery Engine Assistant)**:
+> **Gemini Enterprise exclusively supports importing agents from Agent Registry that implement the open A2A (Agent-to-Agent) Protocol.** Non-A2A agents cannot be imported into Gemini Enterprise.
 
-| Dimension | Vertex AI Agent Engine (Reasoning Engine) | Cloud Run A2A Service |
-| :--- | :--- | :--- |
-| **API Protocol** | **Google Cloud REST / Protobuf** | **Open A2A JSON-RPC 2.0** |
-| **Expected Methods** | `:query` and `:streamQuery` | `message/stream`, `tasks/send`, `tasks/get` |
-| **Request Payload** | `{"input": {"message": "..."}}` | `{"jsonrpc": "2.0", "method": "...", "params": {...}}` |
-| **Client Type** | Google Cloud SDK / Client Libraries | Standard A2A Client (Gemini Enterprise) |
-| **Authentication** | Google Cloud IAM (`Authorization: Bearer <Token>`) | Configurable (Public, API Key, IAP, OAuth) |
-
-When an agent is registered in Agent Registry as an **`A2A_AGENT`**, Gemini Enterprise connects to it using the **open A2A JSON-RPC specification**. Pointing an A2A Agent Card directly to `aiplatform.googleapis.com` causes Protobuf deserialization failures (`Unknown name "jsonrpc": Cannot find field`). 
-
-Hosting the ADK Agent on **Cloud Run** using the **`a2a-sdk`** exposes a native JSON-RPC server that handles `message/stream` directly.
+* **Why?** Gemini Enterprise is designed as a vendor-neutral orchestrator. It uses an internal **A2A Client** that communicates strictly via the **A2A JSON-RPC 2.0 specification** (`message/stream`, `tasks/send`, `tasks/get`).
+* **Agent Registry Filtering**: When Gemini Enterprise queries Agent Registry for available agents, it searches specifically for services registered with `protocols.type == "A2A_AGENT"` containing a valid `A2A_AGENT_CARD`.
+* **Non-A2A Incompatibility**: Resources registered in Agent Registry as `CUSTOM` (such as raw Vertex AI Reasoning Engine REST endpoints) lack the A2A JSON-RPC interface and are ignored or rejected by Gemini Enterprise.
 
 ---
 
-## Architecture Flow
+### 2. Why A2A is Supported with Cloud Run and GKE
+The A2A Protocol is an **application-layer HTTP protocol**:
+* **Transport**: HTTP/1.1 or HTTP/2 with JSON-RPC 2.0 message semantics.
+* **Streaming**: Server-Sent Events (SSE) for streaming token-by-token responses and real-time task status updates (`message/stream`).
+* **Endpoint Control**: An A2A server must listen on a network port, inspect arbitrary JSON-RPC methods, maintain session state, and dispatch events.
+
+**Why Cloud Run and GKE are the Ideal A2A Runtimes**:
+1. **Full Protocol Control**: Cloud Run and GKE run arbitrary Docker containers. You can run any standard web server (`Starlette`, `FastAPI`, `uvicorn`, Go, or Node.js) running the `a2a-sdk` server stack (`A2AStarletteApplication`).
+2. **Server-Sent Events (SSE) Support**: Both Cloud Run and GKE natively support long-lived HTTP streaming connections required for `message/stream`.
+3. **Flexible Authentication**: In Cloud Run and GKE, authentication can be handled at the ingress level (IAM `roles/run.invoker`, Cloud Armor, or Agent Gateway) or within the application, decoupling client authentication from underlying Google Cloud APIs.
+
+---
+
+### 3. Why Vertex AI Agent Engine Uses ADK (and Why it is Not A2A)
+**Vertex AI Agent Engine (Reasoning Engine)** is a **fully managed Google Cloud PaaS** for deploying ADK agents:
+* **The Hosting Model**: When you run `adk deploy agent_engine` or use the Vertex AI Python SDK, Vertex AI packages your Python ADK agent (`LlmAgent`, `Runner`, tools) into an internal microservice container.
+* **The API Frontend**: Vertex AI does **not** expose a raw web server or open HTTP ports. Instead, all traffic passes through Google's unified API frontend (`aiplatform.googleapis.com`).
+* **The Protocol**: Vertex AI exposes a **Google Cloud Resource API** governed by Protobuf schemas:
+  - `POST https://{region}-aiplatform.googleapis.com/v1/.../reasoningEngines/{id}:query`
+  - `POST https://{region}-aiplatform.googleapis.com/v1/.../reasoningEngines/{id}:streamQuery`
+  - Expected Request Schema:
+    ```json
+    {
+      "input": {
+        "message": "What is on the menu?"
+      }
+    }
+    ```
+* **The Protobuf Parser Barrier**: When Gemini Enterprise sends an A2A JSON-RPC payload (`{"jsonrpc": "2.0", "id": 1, "method": "message/stream", "params": {...}}`) directly to Vertex AI, Google's Protobuf API gateway cannot parse the fields and immediately aborts:
+  ```text
+  Invalid JSON payload received. Unknown name "jsonrpc": Cannot find field.
+  Invalid JSON payload received. Unknown name "method": Cannot find field.
+  Invalid JSON payload received. Unknown name "params": Cannot find field.
+  ```
+
+---
+
+### 4. Comprehensive Architectural Comparison
+
+| Dimension | Vertex AI Agent Engine (Reasoning Engine) | Cloud Run / GKE A2A Server |
+| :--- | :--- | :--- |
+| **Primary Purpose** | Managed code-level execution of ADK Python agents | Open, interoperable Agent-to-Agent web service |
+| **Interface Protocol** | **Google Cloud REST / Protobuf** (`aiplatform.googleapis.com`) | **Open A2A JSON-RPC 2.0 over HTTP** (`a2a-sdk`) |
+| **Streaming Mechanism** | Google Cloud Protobuf chunk streaming (`:streamQuery`) | Server-Sent Events (SSE) (`message/stream`) |
+| **Expected Request** | `{"input": {"message": "..."}}` | `{"jsonrpc": "2.0", "method": "...", "params": {...}}` |
+| **Agent Registry Registration** | `type: "CUSTOM"`, `protocolBinding: "HTTP_JSON"` | `type: "A2A_AGENT"`, `card: "A2A_AGENT_CARD"` |
+| **Gemini Enterprise Import** | ❌ **Not Supported** (GE requires A2A JSON-RPC) | ✅ **Natively Supported** (Standard A2A flow) |
+| **Calling Mechanisms** | Vertex AI Python SDK, gcloud, internal agent-to-agent ADK calls | Gemini Enterprise, external A2A clients, curl |
+| **Authentication** | Google Cloud IAM (`roles/aiplatform.user` on caller) | IAM `roles/run.invoker`, Agent Gateway IAP, or Public |
+
+---
+
+### 5. How the Architecture Fits Together
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ Gemini Enterprise Assistant (A2A Client)                     │
-│ Dispatches: A2A JSON-RPC 2.0 (method: "message/stream")      │
-└──────────────────────────────┬───────────────────────────────┘
-                               │
-                               ▼ [Via Agent Gateway / IAP]
-┌──────────────────────────────────────────────────────────────┐
-│ Cloud Run A2A Service (deepakmichaelprod)                     │
-│ Runs: A2AStarletteApplication (a2a-sdk + uvicorn)            │
-│ Service URL: https://burger-seller-a2a-xxx.run.app           │
-│ Service Account: 114740196141-compute@developer...           │
-└──────────────────────────────┬───────────────────────────────┘
-                               │
-                               ▼ [Native Google Cloud ADC]
-┌──────────────────────────────────────────────────────────────┐
-│ Vertex AI Gemini 2.5 Flash API                               │
-│ Executes: LlmAgent & Tools (get_burger_menu, create_order)   │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ Gemini Enterprise (Assistant)                               │
+│ • Requires: A2A Protocol                                    │
+│ • Dispatches: JSON-RPC 2.0 (method: "message/stream")       │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼ [Discovers via Agent Registry (type: A2A_AGENT)]
+┌─────────────────────────────────────────────────────────────┐
+│ Central Agent Gateway / IAP (deepakmichaelprod)             │
+│ • Enforces: Security policies & IAP egressor authorization  │
+│ • Routes: To Cloud Run backend                              │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼ [HTTP / JSON-RPC 2.0]
+┌─────────────────────────────────────────────────────────────┐
+│ Cloud Run A2A Service (burger-seller-a2a)                   │
+│ • Runs: A2AStarletteApplication (a2a-sdk)                   │
+│ • Translates: A2A JSON-RPC ➔ ADK Runner                     │
+│ • Service Account: 114740196141-compute@developer...        │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼ [Native Google Cloud ADC via Service Account]
+┌─────────────────────────────────────────────────────────────┐
+│ Vertex AI Gemini 2.5 Flash API                              │
+│ • Executes: LlmAgent inference & tool execution             │
+└─────────────────────────────────────────────────────────────┘
 ```
+
 
 ---
 
