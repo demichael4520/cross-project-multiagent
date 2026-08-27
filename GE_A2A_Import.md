@@ -446,8 +446,34 @@ gcloud alpha agent-registry services update burger-seller-agent \
 
 ## #4. IAM & Security Configuration
 
-### Layer 1: Cloud Run Service Account (Runtime Permissions)
-The service account running Cloud Run (`114740196141-compute@developer.gserviceaccount.com`) needs access to invoke Vertex AI Gemini models:
+A complete 4-layer IAM model guarantees secure, authenticated communication without requiring end-user OAuth consent screens:
+
+```
+┌────────────────────────────────────────────────────────┐
+│ Layer 4: IAP Egressor (Central Agent Gateway)          │
+│ Authorizes Discovery Engine SPIFFE Identity via IAP    │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│ Layer 3: Project Discovery & Gateway Routing           │
+│ Allows Discovery Engine SA to list agents & routes     │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│ Layer 2: Cloud Run Invoker (Service-Level)             │
+│ Allows Discovery Engine SA to invoke burger-seller-a2a │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│ Layer 1: Runtime Model Execution (ADC)                 │
+│ Allows Cloud Run Compute SA to invoke Gemini Flash     │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Layer 1: Cloud Run Compute Service Account (Model Execution)
+The service account running Cloud Run (`114740196141-compute@developer.gserviceaccount.com`) needs permissions to invoke Vertex AI Gemini 2.5 Flash models via Application Default Credentials (ADC):
 
 ```bash
 gcloud projects add-iam-policy-binding deepakmichaelprod \
@@ -455,28 +481,60 @@ gcloud projects add-iam-policy-binding deepakmichaelprod \
   --role="roles/aiplatform.user"
 ```
 
-### Layer 2: Gemini Enterprise Discovery Engine Service Agent
+---
+
+### Layer 2: Cloud Run Service Invocation Role (`roles/run.invoker`)
+* **Resource**: `burger-seller-a2a` (Cloud Run service in `deepakmichaelprod`, region `us-central1`)
+* **Role**: `roles/run.invoker`
+* **Target**: `serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com`
+* **Rationale**: Organization policy `constraints/iam.allowedPolicyMemberDomains` blocks public unauthenticated access (`allUsers`). Binding `roles/run.invoker` directly to Gemini Enterprise's Discovery Engine service account allows authenticated service-to-service invocation without needing user OAuth logins, passwords, or client secrets.
+
 ```bash
-# Allow Gemini Enterprise to discover registered agents
+gcloud run services add-iam-policy-binding burger-seller-a2a \
+  --region=us-central1 \
+  --project=deepakmichaelprod \
+  --member="serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
+  --role="roles/run.invoker"
+```
+
+---
+
+### Layer 3: Discovery Engine Service Agent (Project-Level Discovery & Routing)
+Gemini Enterprise's service agent requires visibility into Agent Registry and Central Agent Gateway routing topology:
+
+```bash
+# 1. Allow Gemini Enterprise to discover and list registered agents in Agent Registry
 gcloud projects add-iam-policy-binding deepakmichaelprod \
   --member="serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
   --role="roles/agentregistry.viewer"
 
-# Allow Gemini Enterprise to view Central Agent Gateway routes
+# 2. Allow Gemini Enterprise to inspect Central Agent Gateway routing topology
 gcloud projects add-iam-policy-binding deepakmichaelprod \
   --member="serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
   --role="roles/networkservices.viewer"
 ```
 
-### Layer 3: IAP Egressor Role (Agent Gateway)
+---
+
+### Layer 4: IAP Egress Authorization on Agent Resource (`roles/iap.egressor`)
+* **Resource**: Agent Registry Resource (`agentregistry-00000000-0000-0000-4c41-4c6ec39e5f39`)
+* **Role**: `roles/iap.egressor`
+* **Target**: The Gemini Enterprise Assistant's managed SPIFFE identity:
+  ```text
+  principal://agents.global.org-1015654926499.system.id.goog/resources/discoveryengine/projects/114740196141/locations/global/engines/deepak-ge-app_1787348960235/assistants/default_assistant/agents/registry/*
+  ```
+* **Rationale**: The Central Agent Gateway enforces Identity-Aware Proxy (IAP) authorization (`agw-egress-iap-authzpolicy`). Without this binding, the gateway intercepts requests from Gemini Enterprise and returns HTTP 403 Forbidden.
+
 ```bash
 gcloud beta iap web add-iam-policy-binding \
   --project=deepakmichaelprod \
   --region=us-central1 \
   --resource-type=agent-registry \
+  --agent=agentregistry-00000000-0000-0000-4c41-4c6ec39e5f39 \
   --role="roles/iap.egressor" \
   --member="principal://agents.global.org-1015654926499.system.id.goog/resources/discoveryengine/projects/114740196141/locations/global/engines/deepak-ge-app_1787348960235/assistants/default_assistant/agents/registry/*"
 ```
+
 
 ---
 
