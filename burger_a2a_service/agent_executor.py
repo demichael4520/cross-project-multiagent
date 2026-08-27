@@ -65,12 +65,18 @@ class ADKAgentExecutor(AgentExecutor):
                 ),
             )
 
-            session = await self.runner.session_service.create_session(
+            session = await self.runner.session_service.get_session(
                 app_name=self.agent.name,
                 user_id=user_id,
-                state={},
                 session_id=task.context_id,
             )
+            if not session:
+                session = await self.runner.session_service.create_session(
+                    app_name=self.agent.name,
+                    user_id=user_id,
+                    state={},
+                    session_id=task.context_id,
+                )
 
             content = types.Content(
                 role='user', parts=[types.Part.from_text(text=query)]
