@@ -39,8 +39,9 @@ def make_sync(func):
 async def main(host, port):
     app_url = os.environ.get('APP_URL', f'http://{host}:{port}')
 
+    agent_name = os.environ.get('AGENT_NAME', 'Burger Seller Agent')
     agent_card = AgentCard(
-        name="Burger Seller Agent",
+        name=agent_name,
         description="Specialized seller agent for browsing burger menus, checking pricing, and placing orders.",
         version='1.0.0',
         url=app_url,
