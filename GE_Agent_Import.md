@@ -56,7 +56,7 @@ Save this configuration as `burger_agent_card.json`.
       "description": "Google Cloud OAuth 2.0 Authentication",
       "flows": {
         "authorizationCode": {
-          "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+          "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
           "tokenUrl": "https://oauth2.googleapis.com/token",
           "scopes": {
             "https://www.googleapis.com/auth/cloud-platform": "Access to Google Cloud Platform"
@@ -166,7 +166,7 @@ When importing an agent with `securitySchemes`, Gemini Enterprise requires OAuth
 | :--- | :--- | :--- |
 | **Client ID** | `<YOUR_OAUTH_CLIENT_ID>` | OAuth 2.0 Web Client ID in the GCP Project |
 | **Client Secret** | `<YOUR_OAUTH_CLIENT_SECRET>` | OAuth 2.0 Web Client Secret |
-| **Authorization URL** | `https://accounts.google.com/o/oauth2/v2/auth` | Google OAuth 2.0 Authorization Endpoint |
+| **Authorization URL** | `https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent` | Google OAuth 2.0 Authorization Endpoint (`access_type=offline` required for refresh token) |
 | **Token URL** | `https://oauth2.googleapis.com/token` | Google OAuth 2.0 Token Exchange Endpoint |
 | **Scopes** | `https://www.googleapis.com/auth/cloud-platform` | Scope required to invoke Vertex AI APIs |
 
