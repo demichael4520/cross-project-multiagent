@@ -290,7 +290,7 @@ if __name__ == '__main__':
 
 ## #2. The Canonical A2A Agent Card
 
-Save this configuration as `burger_agent_card.json`. Replace `<CLOUD_RUN_SERVICE_URL>` with your Cloud Run URL.
+Save this configuration as `burger_agent_card.json`. Replace `https://burger-seller-a2a-114740196141.us-central1.run.app` with your Cloud Run URL.
 
 ```json
 {
@@ -299,7 +299,7 @@ Save this configuration as `burger_agent_card.json`. Replace `<CLOUD_RUN_SERVICE
   "version": "1.0.0",
   "protocolVersion": "0.3.0",
   "preferredTransport": "JSONRPC",
-  "url": "<CLOUD_RUN_SERVICE_URL>",
+  "url": "https://burger-seller-a2a-114740196141.us-central1.run.app",
   "provider": {
     "organization": "Burger Store",
     "url": "https://burger.example.com"
