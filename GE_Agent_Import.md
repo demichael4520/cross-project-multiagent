@@ -164,8 +164,10 @@ When importing an agent with `securitySchemes`, Gemini Enterprise requires OAuth
 
 | Configuration Field | Value | Description |
 | :--- | :--- | :--- |
-| **Client ID** | `<YOUR_OAUTH_CLIENT_ID>` | OAuth 2.0 Web Client ID in the GCP Project |
-| **Client Secret** | `<YOUR_OAUTH_CLIENT_SECRET>` | OAuth 2.0 Web Client Secret |
+| **Application Type** | `Web application` | OAuth 2.0 Client Type in Google Cloud Console |
+| **Authorized Redirect URI** | `https://vertexaisearch.cloud.google.com/oauth-redirect` | Exact redirect URI required by Gemini Enterprise |
+| **Client ID** | `<YOUR_OAUTH_CLIENT_ID>` | OAuth 2.0 Web Client ID generated in Google Cloud Console |
+| **Client Secret** | `<YOUR_OAUTH_CLIENT_SECRET>` | OAuth 2.0 Web Client Secret generated in Google Cloud Console |
 | **Authorization URL** | `https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent` | Google OAuth 2.0 Authorization Endpoint (`access_type=offline` required for refresh token) |
 | **Token URL** | `https://oauth2.googleapis.com/token` | Google OAuth 2.0 Token Exchange Endpoint |
 | **Scopes** | `https://www.googleapis.com/auth/cloud-platform` | Scope required to invoke Vertex AI APIs |
