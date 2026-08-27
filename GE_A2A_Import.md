@@ -516,3 +516,104 @@ curl -X POST "${SERVICE_URL}" \
     }
   }'
 ```
+
+---
+
+## #6. Verification & Observability in Central Agent Gateway
+
+When Gemini Enterprise invokes the imported A2A agent, traffic is routed through the Central Agent Gateway (`agw-egress`). The gateway performs IAP authentication, enforces security policies, logs the JSON-RPC method, and streams the response.
+
+### 6.1 Gcloud Logging Commands for Agent Gateway
+
+#### Command 1: Formatted Table View (Quick Status Check)
+```bash
+gcloud logging read \
+  'logName="projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests" AND (httpRequest.requestUrl=~"run.app" OR jsonPayload.enforcedGatewaySecurityPolicy.hostname=~"run.app")' \
+  --project=deepakmichaelprod \
+  --limit=5 \
+  --format="table(timestamp.date('%H:%M:%S'):label=TIME, httpRequest.status:label=STATUS, jsonPayload.agentGatewayInfo.mcpInfo.method:label=METHOD, jsonPayload.authzPolicyInfo.result:label=IAP_AUTHZ, httpRequest.latency:label=LATENCY)"
+```
+
+#### Command 2: Detailed JSON View (Full Policy Evaluation & Tracing)
+```bash
+gcloud logging read \
+  'logName="projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests" AND (httpRequest.requestUrl=~"run.app" OR jsonPayload.enforcedGatewaySecurityPolicy.hostname=~"run.app")' \
+  --project=deepakmichaelprod \
+  --limit=1 \
+  --format="json"
+```
+
+#### Command 3: Cloud Run Execution Logs (Model Inference & ADK Runner)
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="burger-seller-a2a"' \
+  --project=deepakmichaelprod \
+  --limit=10 \
+  --format="table(timestamp.date('%H:%M:%S'):label=TIME, severity, textPayload)"
+```
+
+---
+
+### 6.2 Verified Real Production Gateway Log Entry
+
+```json
+{
+  "resource": {
+    "type": "networkservices.googleapis.com/Gateway",
+    "labels": {
+      "gateway_name": "agw-egress",
+      "gateway_type": "SECURE_WEB_GATEWAY",
+      "location": "us-central1",
+      "network_name": "projects/y9a058415cac84448p-tp/global/networks/uk1-25feb-2-vpc4",
+      "resource_container": "114740196141"
+    }
+  },
+  "httpRequest": {
+    "latency": "1.147154s",
+    "protocol": "HTTP/1.1",
+    "requestMethod": "POST",
+    "requestUrl": "https://burger-seller-a2a-114740196141.us-central1.run.app/",
+    "responseSize": "2006",
+    "serverIp": "34.143.75.2:443",
+    "status": 200,
+    "userAgent": "python-httpx/0.26.0"
+  },
+  "jsonPayload": {
+    "@type": "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+    "agentGatewayInfo": {
+      "agentRegistryResource": "projects/114740196141/locations/us-central1/agents/agentregistry-00000000-0000-0000-4c41-4c6ec39e5f39",
+      "mcpInfo": {
+        "method": "message/stream"
+      }
+    },
+    "authzPolicyInfo": {
+      "policies": [
+        {
+          "name": "projects/978983713504/locations/us-central1/authzPolicies/agw-egress-iap-authzpolicy",
+          "result": "ALLOWED"
+        }
+      ],
+      "result": "ALLOWED"
+    },
+    "enforcedGatewaySecurityPolicy": {
+      "hostname": "burger-seller-a2a-114740196141.us-central1.run.app",
+      "matchedRules": [
+        {
+          "action": "ALLOWED",
+          "name": "default_denied"
+        }
+      ]
+    }
+  },
+  "logName": "projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests",
+  "severity": "INFO",
+  "status": 200
+}
+```
+
+### Key Verification Highlights:
+1. **`httpRequest.status: 200`** — Confirms successful execution without network or application failures.
+2. **`agentGatewayInfo.mcpInfo.method: "message/stream"`** — Confirms Gemini Enterprise is using open A2A JSON-RPC streaming.
+3. **`authzPolicyInfo.result: "ALLOWED"`** — Confirms Identity-Aware Proxy (IAP) successfully authorized the Discovery Engine assistant's SPIFFE identity (`principal://agents.global.org-1015654926499...`).
+4. **`agentGatewayInfo.agentRegistryResource`** — Confirms routing was dynamically resolved via Google Cloud Agent Registry.
+
