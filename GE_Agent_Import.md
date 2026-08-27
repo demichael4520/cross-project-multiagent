@@ -1,6 +1,31 @@
-# Gemini Enterprise (GE) Agent Import Guide
+# Gemini Enterprise (GE) Agent Import & Execution Guide
 
-This document details the exact **Working A2A Agent Card JSON** and **IAM Permissions** required to import and execute agents from **Agent Registry** into **Gemini Enterprise (Discovery Engine)** through the **Central Agent Gateway**.
+This document is the definitive guide for importing and executing agents from **Agent Registry** into **Gemini Enterprise (Discovery Engine)** through the **Central Agent Gateway**.
+
+---
+
+## Architecture Flow
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Gemini Enterprise Assistant                                  │
+│ Identity: principal://.../resources/discoveryengine/...       │
+│ Credential: Authorization: Bearer <Google OAuth Token>       │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼ [roles/iap.egressor]
+┌──────────────────────────────────────────────────────────────┐
+│ Central Agent Gateway / IAP (deepakmichaelprod)             │
+│ Evaluates IAP Egressor Policy & Security Policies            │
+│ Target: burger-seller-agent (agentregistry-...)              │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼ [roles/aiplatform.user]
+┌──────────────────────────────────────────────────────────────┐
+│ Vertex AI Reasoning Engine (deepakmichaelstage)              │
+│ Endpoint: .../reasoningEngines/1226814733307346944:streamQuery│
+└──────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -25,6 +50,17 @@ Save this configuration as `burger_agent_card.json`.
     "streaming": true,
     "pushNotifications": false
   },
+  "securitySchemes": {
+    "bearerAuth": {
+      "type": "http",
+      "scheme": "bearer"
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
   "defaultInputModes": [
     "text/plain"
   ],
@@ -77,17 +113,26 @@ Save this configuration as `burger_agent_card.json`.
 }
 ```
 
-### Critical Rules for the Agent Card:
-1. **Omit `securitySchemes`**: Excluding the `securitySchemes` block ensures Gemini Enterprise recognizes that runtime permissions (Google Cloud IAM / Agent Gateway) govern the agent and does not prompt for external OAuth 2.0 Client ID / Secret.
-2. **Use IANA MIME Types**: `defaultInputModes` and `defaultOutputModes` must be valid MIME types (e.g. `text/plain`), not informal strings like `"text"`.
-3. **Specify `protocolVersion: "0.3.0"` & `preferredTransport: "JSONRPC"`**: Required by the console frontend parser to select the appropriate adapter.
-4. **Skills Format**: Keep skills clean using `id`, `name`, `description`, `tags`, and `examples`. Avoid inserting nested OpenAPI schemas (`parameters: { properties: ... }`) directly into skill blocks, as this triggers `Failed to parse agent card` in the client-side validator.
+### Critical Specification Requirements:
+1. **Target URL (`url`)**:
+   * Must point to `:streamQuery` (or `:query`).
+   * **Do NOT** use bare `/reasoningEngines/{id}`, which returns `404 Not Found`.
+2. **Security Block (`securitySchemes` & `security`)**:
+   * Must declare `bearerAuth` so Gemini Enterprise prompts for and attaches an `Authorization: Bearer <token>` header to outbound HTTP calls.
+   * Without this, Gemini Enterprise sends unauthenticated requests, triggering `401 CREDENTIALS_MISSING`.
+3. **MIME Types**:
+   * `defaultInputModes` and `defaultOutputModes` must use IANA MIME types (`text/plain`, `application/json`), not generic `"text"`.
+4. **Protocol & Transport**:
+   * Must specify `protocolVersion: "0.3.0"` and `preferredTransport: "JSONRPC"`. Top-level `"1.0"` is rejected by Agent Registry for single-agent endpoints.
+5. **Skills Schema**:
+   * Must use canonical A2A fields: `id`, `name`, `description`, `tags`, `examples`, `inputModes`, `outputModes`.
+   * **Do NOT** embed OpenAPI `parameters: { properties: ... }` schemas into skill definitions, which breaks the frontend Angular parser.
 
 ---
 
 ## 2. Agent Registry Deployment Command
 
-To apply or update the A2A Agent Card on the Agent Registry service in `PROJECT_GOVERNANCE` (`deepakmichaelprod`):
+To register or update the agent card in `PROJECT_GOVERNANCE` (`deepakmichaelprod`):
 
 ```bash
 CARD_CONTENT=$(cat burger_agent_card.json)
@@ -102,49 +147,36 @@ gcloud alpha agent-registry services update burger-seller-agent \
 
 ---
 
-## 3. Required IAM & IAP Permissions
+## 3. OAuth 2.0 Credentials for Gemini Enterprise
 
-Cross-project agent execution from Gemini Enterprise requires permissions across three layers:
+When importing an agent with `securitySchemes`, Gemini Enterprise requires OAuth client credentials to acquire access tokens for calling Google Cloud APIs:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Gemini Enterprise Assistant                                 │
-│ principal://.../resources/discoveryengine/...               │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                               ▼ [roles/iap.egressor]
-┌─────────────────────────────────────────────────────────────┐
-│ Central Agent Gateway / IAP (deepakmichaelprod)            │
-│ Target: burger-seller-agent (agentregistry-...)             │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-                               ▼ [roles/aiplatform.user]
-┌─────────────────────────────────────────────────────────────┐
-│ Vertex AI Reasoning Engine (deepakmichaelstage)             │
-│ Target: 1226814733307346944                                 │
-└─────────────────────────────────────────────────────────────┘
-```
+| Credential | Value |
+| :--- | :--- |
+| **Client ID** | `<YOUR_OAUTH_CLIENT_ID>` |
+| **Client Secret** | `<YOUR_OAUTH_CLIENT_SECRET>` |
+
+*(To create a new client, use Google Cloud Console > APIs & Services > Credentials > Create Credentials > OAuth client ID > Web application).*
+
+---
+
+## 4. Required IAM & IAP Permissions
 
 ### Layer A: Gemini Enterprise Discovery Engine Service Agent
+Service Account: `service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com`
 
-The service agent (`service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com`) needs permissions to discover services in the governance project and invoke the runtime in the seller project.
-
-#### 1. Governance Project (`deepakmichaelprod`):
 ```bash
-# Allow Gemini Enterprise to discover agents and read card specifications
+# 1. Allow Gemini Enterprise to view agents in the Governance Project
 gcloud projects add-iam-policy-binding deepakmichaelprod \
   --member="serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
   --role="roles/agentregistry.viewer"
 
-# Allow Gemini Enterprise to inspect Central Agent Gateway routes and service attachments
+# 2. Allow Gemini Enterprise to view Central Agent Gateway routes
 gcloud projects add-iam-policy-binding deepakmichaelprod \
   --member="serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
   --role="roles/networkservices.viewer"
-```
 
-#### 2. Seller Runtime Project (`deepakmichaelstage`):
-```bash
-# Allow Gemini Enterprise to execute the Reasoning Engine container backend
+# 3. Allow Gemini Enterprise to execute Reasoning Engines in the Seller Project
 gcloud projects add-iam-policy-binding deepakmichaelstage \
   --member="serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
   --role="roles/aiplatform.user"
@@ -154,24 +186,21 @@ gcloud projects add-iam-policy-binding deepakmichaelstage \
 
 ### Layer B: IAP Gateway Egress Authorization (`roles/iap.egressor`)
 
-When Gemini Enterprise dispatches calls through the Central Agent Gateway, IAP evaluates the caller's **SPIFFE machine identity**:
-
+IAP evaluates the calling Gemini Enterprise **SPIFFE machine identity**:
 ```text
 principal://agents.global.org-1015654926499.system.id.goog/resources/discoveryengine/projects/114740196141/locations/global/engines/deepak-ge-app_1787348960235/assistants/default_assistant/agents/registry/*
 ```
 
-#### 1. Grant Egress on the Burger Agent Service:
 ```bash
+# 1. Grant Egress on the Burger Agent Service
 gcloud beta iap web add-iam-policy-binding \
   --project=deepakmichaelprod \
   --region=us-central1 \
   --agent=burger-seller-agent \
   --role="roles/iap.egressor" \
   --member="principal://agents.global.org-1015654926499.system.id.goog/resources/discoveryengine/projects/114740196141/locations/global/engines/deepak-ge-app_1787348960235/assistants/default_assistant/agents/registry/*"
-```
 
-#### 2. Grant Egress on the Entire Agent Registry (Recommended):
-```bash
+# 2. Grant Egress across the entire Agent Registry
 gcloud beta iap web add-iam-policy-binding \
   --project=deepakmichaelprod \
   --region=us-central1 \
@@ -180,33 +209,23 @@ gcloud beta iap web add-iam-policy-binding \
   --member="principal://agents.global.org-1015654926499.system.id.goog/resources/discoveryengine/projects/114740196141/locations/global/engines/deepak-ge-app_1787348960235/assistants/default_assistant/agents/registry/*"
 ```
 
-#### 3. Direct REST Policy Binding (if setting policy by Agent Resource ID):
-```bash
-TOKEN=$(gcloud auth application-default print-access-token)
+---
 
-curl -s -X POST "https://iap.googleapis.com/v1/projects/114740196141/locations/us-central1/iap_web/agentRegistry/agents/agentregistry-00000000-0000-0000-57ab-a823df81404e:setIamPolicy" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "policy": {
-      "bindings": [
-        {
-          "role": "roles/iap.egressor",
-          "members": [
-            "principal://agents.global.org-1015654926499.system.id.goog/resources/discoveryengine/projects/114740196141/locations/global/engines/deepak-ge-app_1787348960235/assistants/default_assistant/agents/registry/*"
-          ]
-        }
-      ]
-    }
-  }'
-```
+## 5. Troubleshooting & Diagnostics
+
+| Symptom / Error Code | Root Cause | Fix |
+| :--- | :--- | :--- |
+| **`Failed to parse agent card [object Object]`** in Chrome DevTools | Schema validation failure in the frontend (e.g. invalid MIME type `"text"` instead of `"text/plain"`, or nested `parameters` in `skills`). | Use canonical A2A fields and `text/plain` MIME types. |
+| **`invalid top-level protocolVersion "1.0"`** during `gcloud agent-registry services update` | Agent Registry rejects top-level `protocolVersion: "1.0"`. | Use `protocolVersion: "0.3.0"` with `preferredTransport: "JSONRPC"`. |
+| **`IAP Permission Denied (Code 7)`** in Cloud Logging | Gemini Enterprise SPIFFE identity (`resources/discoveryengine/...`) lacks `roles/iap.egressor`. | Add `roles/iap.egressor` on the agent resource or entire registry. |
+| **`HTTP 404 Not Found`** from Gateway | URL in agent card points to `/reasoningEngines/{id}` directly without a sub-method. | Append `:streamQuery` or `:query` to the URL. |
+| **`HTTP 401 UNAUTHENTICATED (CREDENTIALS_MISSING)`** | Agent card omitted `securitySchemes`, causing Gemini Enterprise to send requests without an `Authorization: Bearer` header. | Add `securitySchemes` to the agent card and provide the OAuth Client ID and Secret in Gemini Enterprise. |
 
 ---
 
-## 4. Verification in Cloud Logging
+## 6. Cloud Logging Audit Queries
 
-To confirm that Gemini Enterprise calls are evaluated and granted by IAP:
-
+### IAP Data Access Authorization:
 ```bash
 gcloud logging read \
   'logName="projects/deepakmichaelprod/logs/cloudaudit.googleapis.com%2Fdata_access" \
@@ -214,5 +233,15 @@ gcloud logging read \
    AND protoPayload.authenticationInfo.principalSubject=~"discoveryengine"' \
   --project=deepakmichaelprod \
   --limit=5 \
-  --format="table(timestamp.date('%Y-%m-%d %H:%M:%S'):label=TIME, protoPayload.authenticationInfo.principalSubject:label=SPIFFE_IDENTITY, protoPayload.authorizationInfo[0].granted:label=GRANTED, protoPayload.status.message:label=STATUS)"
+  --format="table(timestamp.date('%Y-%m-%d %H:%M:%S'):label=TIME, protoPayload.authenticationInfo.principalSubject:label=CALLER, protoPayload.authorizationInfo[0].granted:label=GRANTED, protoPayload.status.message:label=STATUS)"
+```
+
+### Agent Gateway Request Trajectory:
+```bash
+gcloud logging read \
+  'logName="projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests" \
+   AND httpRequest.requestUrl=~"aiplatform"' \
+  --project=deepakmichaelprod \
+  --limit=5 \
+  --format="table(timestamp.date('%Y-%m-%d %H:%M:%S'):label=TIME, httpRequest.requestMethod:label=METHOD, httpRequest.status:label=HTTP_STATUS, httpRequest.requestUrl:label=URL, jsonPayload.authzPolicyInfo.result:label=IAP_AUTHZ, jsonPayload.enforcedGatewaySecurityPolicy.matchedRules[0].action:label=GW_SECURITY)"
 ```
