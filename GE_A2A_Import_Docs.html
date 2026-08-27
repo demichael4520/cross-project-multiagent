@@ -671,6 +671,15 @@ curl -X POST &quot;${SERVICE_URL}&quot; \
   --format=&quot;table(timestamp.date('%H:%M:%S'):label=TIME, httpRequest.status:label=STATUS, jsonPayload.agentGatewayInfo.mcpInfo.method:label=METHOD, jsonPayload.authzPolicyInfo.result:label=IAP_AUTHZ, httpRequest.latency:label=LATENCY)&quot;
 </code></pre>
 
+<p><strong>Output:</strong></p>
+<pre class="codehilite"><code class="language-text">TIME      STATUS  METHOD          IAP_AUTHZ  LATENCY
+04:15:17  200     message/stream  ALLOWED    2.107221s
+04:15:10  200     message/stream  ALLOWED    1.903503s
+04:14:55  200     message/stream  ALLOWED    1.971791s
+04:14:42  200     message/stream  ALLOWED    5.752263s
+04:10:51  200     message/stream  ALLOWED    0.116556s
+</code></pre>
+
 <h4>Command 2: Detailed JSON View (Full Policy Evaluation &amp; Tracing)</h4>
 <pre class="codehilite"><code class="language-bash">gcloud logging read \
   'logName=&quot;projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests&quot; AND (httpRequest.requestUrl=~&quot;run.app&quot; OR jsonPayload.enforcedGatewaySecurityPolicy.hostname=~&quot;run.app&quot;)' \
@@ -679,12 +688,90 @@ curl -X POST &quot;${SERVICE_URL}&quot; \
   --format=&quot;json&quot;
 </code></pre>
 
+<p><strong>Output:</strong></p>
+<pre class="codehilite"><code class="language-json">[
+  {
+    &quot;httpRequest&quot;: {
+      &quot;latency&quot;: &quot;2.107221s&quot;,
+      &quot;protocol&quot;: &quot;HTTP/1.1&quot;,
+      &quot;remoteIp&quot;: &quot;34.180.236.20:41180&quot;,
+      &quot;requestMethod&quot;: &quot;POST&quot;,
+      &quot;requestSize&quot;: &quot;4028&quot;,
+      &quot;requestUrl&quot;: &quot;https://burger-seller-a2a-114740196141.us-central1.run.app/&quot;,
+      &quot;responseSize&quot;: &quot;2009&quot;,
+      &quot;serverIp&quot;: &quot;34.143.75.2:443&quot;,
+      &quot;status&quot;: 200,
+      &quot;userAgent&quot;: &quot;python-httpx/0.26.0&quot;
+    },
+    &quot;insertId&quot;: &quot;15enkaezfulk&quot;,
+    &quot;jsonPayload&quot;: {
+      &quot;@type&quot;: &quot;type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry&quot;,
+      &quot;agentGatewayInfo&quot;: {
+        &quot;agentRegistryResource&quot;: &quot;projects/114740196141/locations/us-central1/agents/agentregistry-00000000-0000-0000-4c41-4c6ec39e5f39&quot;,
+        &quot;mcpInfo&quot;: {
+          &quot;method&quot;: &quot;message/stream&quot;
+        }
+      },
+      &quot;authzPolicyInfo&quot;: {
+        &quot;policies&quot;: [
+          {
+            &quot;name&quot;: &quot;projects/978983713504/locations/us-central1/authzPolicies/agw-egress-iap-authzpolicy&quot;,
+            &quot;result&quot;: &quot;ALLOWED&quot;
+          }
+        ],
+        &quot;result&quot;: &quot;ALLOWED&quot;
+      },
+      &quot;enforcedGatewaySecurityPolicy&quot;: {
+        &quot;hostname&quot;: &quot;burger-seller-a2a-114740196141.us-central1.run.app&quot;,
+        &quot;matchedRules&quot;: [
+          {
+            &quot;action&quot;: &quot;ALLOWED&quot;,
+            &quot;name&quot;: &quot;default_denied&quot;
+          }
+        ]
+      }
+    },
+    &quot;logName&quot;: &quot;projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests&quot;,
+    &quot;receiveTimestamp&quot;: &quot;2026-08-27T04:15:23.428221083Z&quot;,
+    &quot;resource&quot;: {
+      &quot;labels&quot;: {
+        &quot;gateway_name&quot;: &quot;agw-egress&quot;,
+        &quot;gateway_type&quot;: &quot;SECURE_WEB_GATEWAY&quot;,
+        &quot;location&quot;: &quot;us-central1&quot;,
+        &quot;network_name&quot;: &quot;projects/y9a058415cac84448p-tp/global/networks/uk1-25feb-2-vpc4&quot;,
+        &quot;resource_container&quot;: &quot;114740196141&quot;
+      },
+      &quot;type&quot;: &quot;networkservices.googleapis.com/Gateway&quot;
+    },
+    &quot;severity&quot;: &quot;INFO&quot;,
+    &quot;spanId&quot;: &quot;bdd8c404d1683599&quot;,
+    &quot;timestamp&quot;: &quot;2026-08-27T04:15:17.823045Z&quot;,
+    &quot;trace&quot;: &quot;03ac96d093125a7fc7e5eb1da70ab708&quot;,
+    &quot;traceSampled&quot;: true
+  }
+]
+</code></pre>
+
 <h4>Command 3: Cloud Run Execution Logs (Model Inference &amp; ADK Runner)</h4>
 <pre class="codehilite"><code class="language-bash">gcloud logging read \
   'resource.type=&quot;cloud_run_revision&quot; AND resource.labels.service_name=&quot;burger-seller-a2a&quot;' \
   --project=deepakmichaelprod \
   --limit=10 \
-  --format=&quot;table(timestamp.date('%H:%M:%S'):label=TIME, severity, textPayload)&quot;
+  --format=&quot;table(timestamp.date('%H:%M:%S'):label=TIME, textPayload)&quot;
+</code></pre>
+
+<p><strong>Output:</strong></p>
+<pre class="codehilite"><code class="language-text">TIME      TEXT_PAYLOAD
+04:15:19  INFO:google_adk.google.adk.models.google_llm:Response received from the model.
+04:15:19  INFO:google_adk.google.adk.models.google_llm:Sending out request, model: gemini-2.5-flash, backend: GoogleLLMVariant.VERTEX_AI, stream: False
+04:15:17  INFO:google_adk.google.adk.models.google_llm:Sending out request, model: gemini-2.5-flash, backend: GoogleLLMVariant.VERTEX_AI, stream: False
+04:15:17  INFO:     169.254.169.126:45462 - &quot;POST / HTTP/1.1&quot; 200 OK
+04:15:12  INFO:google_adk.google.adk.models.google_llm:Response received from the model.
+04:15:10  INFO:google_adk.google.adk.models.google_llm:Sending out request, model: gemini-2.5-flash, backend: GoogleLLMVariant.VERTEX_AI, stream: False
+04:15:10  INFO:     169.254.169.126:45454 - &quot;POST / HTTP/1.1&quot; 200 OK
+04:14:57  INFO:google_adk.google.adk.models.google_llm:Response received from the model.
+04:14:56  INFO:google_adk.google.adk.models.google_llm:Sending out request, model: gemini-2.5-flash, backend: GoogleLLMVariant.VERTEX_AI, stream: False
+04:14:55  INFO:     169.254.169.126:5164 - &quot;POST / HTTP/1.1&quot; 200 OK
 </code></pre>
 
 <hr />

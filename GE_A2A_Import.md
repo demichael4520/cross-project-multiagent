@@ -592,6 +592,16 @@ gcloud logging read \
   --format="table(timestamp.date('%H:%M:%S'):label=TIME, httpRequest.status:label=STATUS, jsonPayload.agentGatewayInfo.mcpInfo.method:label=METHOD, jsonPayload.authzPolicyInfo.result:label=IAP_AUTHZ, httpRequest.latency:label=LATENCY)"
 ```
 
+**Output:**
+```text
+TIME      STATUS  METHOD          IAP_AUTHZ  LATENCY
+04:15:17  200     message/stream  ALLOWED    2.107221s
+04:15:10  200     message/stream  ALLOWED    1.903503s
+04:14:55  200     message/stream  ALLOWED    1.971791s
+04:14:42  200     message/stream  ALLOWED    5.752263s
+04:10:51  200     message/stream  ALLOWED    0.116556s
+```
+
 #### Command 2: Detailed JSON View (Full Policy Evaluation & Tracing)
 ```bash
 gcloud logging read \
@@ -601,13 +611,93 @@ gcloud logging read \
   --format="json"
 ```
 
+**Output:**
+```json
+[
+  {
+    "httpRequest": {
+      "latency": "2.107221s",
+      "protocol": "HTTP/1.1",
+      "remoteIp": "34.180.236.20:41180",
+      "requestMethod": "POST",
+      "requestSize": "4028",
+      "requestUrl": "https://burger-seller-a2a-114740196141.us-central1.run.app/",
+      "responseSize": "2009",
+      "serverIp": "34.143.75.2:443",
+      "status": 200,
+      "userAgent": "python-httpx/0.26.0"
+    },
+    "insertId": "15enkaezfulk",
+    "jsonPayload": {
+      "@type": "type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry",
+      "agentGatewayInfo": {
+        "agentRegistryResource": "projects/114740196141/locations/us-central1/agents/agentregistry-00000000-0000-0000-4c41-4c6ec39e5f39",
+        "mcpInfo": {
+          "method": "message/stream"
+        }
+      },
+      "authzPolicyInfo": {
+        "policies": [
+          {
+            "name": "projects/978983713504/locations/us-central1/authzPolicies/agw-egress-iap-authzpolicy",
+            "result": "ALLOWED"
+          }
+        ],
+        "result": "ALLOWED"
+      },
+      "enforcedGatewaySecurityPolicy": {
+        "hostname": "burger-seller-a2a-114740196141.us-central1.run.app",
+        "matchedRules": [
+          {
+            "action": "ALLOWED",
+            "name": "default_denied"
+          }
+        ]
+      }
+    },
+    "logName": "projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests",
+    "receiveTimestamp": "2026-08-27T04:15:23.428221083Z",
+    "resource": {
+      "labels": {
+        "gateway_name": "agw-egress",
+        "gateway_type": "SECURE_WEB_GATEWAY",
+        "location": "us-central1",
+        "network_name": "projects/y9a058415cac84448p-tp/global/networks/uk1-25feb-2-vpc4",
+        "resource_container": "114740196141"
+      },
+      "type": "networkservices.googleapis.com/Gateway"
+    },
+    "severity": "INFO",
+    "spanId": "bdd8c404d1683599",
+    "timestamp": "2026-08-27T04:15:17.823045Z",
+    "trace": "03ac96d093125a7fc7e5eb1da70ab708",
+    "traceSampled": true
+  }
+]
+```
+
 #### Command 3: Cloud Run Execution Logs (Model Inference & ADK Runner)
 ```bash
 gcloud logging read \
   'resource.type="cloud_run_revision" AND resource.labels.service_name="burger-seller-a2a"' \
   --project=deepakmichaelprod \
   --limit=10 \
-  --format="table(timestamp.date('%H:%M:%S'):label=TIME, severity, textPayload)"
+  --format="table(timestamp.date('%H:%M:%S'):label=TIME, textPayload)"
+```
+
+**Output:**
+```text
+TIME      TEXT_PAYLOAD
+04:15:19  INFO:google_adk.google.adk.models.google_llm:Response received from the model.
+04:15:19  INFO:google_adk.google.adk.models.google_llm:Sending out request, model: gemini-2.5-flash, backend: GoogleLLMVariant.VERTEX_AI, stream: False
+04:15:17  INFO:google_adk.google.adk.models.google_llm:Sending out request, model: gemini-2.5-flash, backend: GoogleLLMVariant.VERTEX_AI, stream: False
+04:15:17  INFO:     169.254.169.126:45462 - "POST / HTTP/1.1" 200 OK
+04:15:12  INFO:google_adk.google.adk.models.google_llm:Response received from the model.
+04:15:10  INFO:google_adk.google.adk.models.google_llm:Sending out request, model: gemini-2.5-flash, backend: GoogleLLMVariant.VERTEX_AI, stream: False
+04:15:10  INFO:     169.254.169.126:45454 - "POST / HTTP/1.1" 200 OK
+04:14:57  INFO:google_adk.google.adk.models.google_llm:Response received from the model.
+04:14:56  INFO:google_adk.google.adk.models.google_llm:Sending out request, model: gemini-2.5-flash, backend: GoogleLLMVariant.VERTEX_AI, stream: False
+04:14:55  INFO:     169.254.169.126:5164 - "POST / HTTP/1.1" 200 OK
 ```
 
 ---
