@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Gemini Enterprise A2A Agent Import Guide</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #202124;
+    margin: 40px;
+    max-width: 900px;
+  }
+  h1 {
+    font-size: 20pt;
+    color: #1a73e8;
+    border-bottom: 2px solid #1a73e8;
+    padding-bottom: 8px;
+    margin-top: 24px;
+  }
+  h2 {
+    font-size: 15pt;
+    color: #202124;
+    border-bottom: 1px solid #dadce0;
+    padding-bottom: 6px;
+    margin-top: 24px;
+  }
+  h3 {
+    font-size: 12pt;
+    color: #3c4043;
+    margin-top: 18px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+  }
+  th, td {
+    border: 1px solid #dadce0;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 10pt;
+  }
+  th {
+    background-color: #f1f3f4;
+    font-weight: bold;
+    color: #202124;
+  }
+  tr:nth-child(even) {
+    background-color: #fafafa;
+  }
+  pre {
+    background-color: #f8f9fa;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    padding: 12px;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 9.5pt;
+    overflow-x: auto;
+    line-height: 1.4;
+  }
+  code {
+    font-family: "Courier New", Courier, monospace;
+    background-color: #f1f3f4;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 9.5pt;
+  }
+  pre code {
+    background-color: transparent;
+    padding: 0;
+  }
+  blockquote {
+    border-left: 4px solid #1a73e8;
+    background-color: #e8f0fe;
+    padding: 10px 16px;
+    margin: 16px 0;
+    border-radius: 0 4px 4px 0;
+  }
+  hr {
+    border: 0;
+    border-top: 1px solid #dadce0;
+    margin: 24px 0;
+  }
+  ul, ol {
+    padding-left: 24px;
+  }
+  li {
+    margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+<h1>Gemini Enterprise (GE) A2A Agent Deployment &amp; Import Guide</h1>
+<p>This document is the definitive guide for building, deploying, and importing a <strong>Native A2A (Agent-to-Agent) Protocol Agent</strong> into <strong>Gemini Enterprise (Discovery Engine)</strong> using <strong>Google Cloud Run</strong> and <strong>Agent Registry</strong> in project <code>deepakmichaelprod</code>.</p>
+<hr />
+<h2>Architectural Foundations: A2A, Agent Engine, and Gemini Enterprise</h2>
+<h3>1. The Core Rule: Gemini Enterprise Only Supports A2A Agents</h3>
+<p>A fundamental rule governs <strong>Gemini Enterprise (Discovery Engine Assistant)</strong>:</p>
+<blockquote>
+<p><strong>Gemini Enterprise exclusively supports importing agents from Agent Registry that implement the open A2A (Agent-to-Agent) Protocol.</strong> Non-A2A agents cannot be imported into Gemini Enterprise.</p>
+</blockquote>
+<ul>
+<li><strong>Why?</strong> Gemini Enterprise is designed as a vendor-neutral orchestrator. It uses an internal <strong>A2A Client</strong> that communicates strictly via the <strong>A2A JSON-RPC 2.0 specification</strong> (<code>message/stream</code>, <code>tasks/send</code>, <code>tasks/get</code>).</li>
+<li><strong>Agent Registry Filtering</strong>: When Gemini Enterprise queries Agent Registry for available agents, it searches specifically for services registered with <code>protocols.type == "A2A_AGENT"</code> containing a valid <code>A2A_AGENT_CARD</code>.</li>
+<li><strong>Non-A2A Incompatibility</strong>: Resources registered in Agent Registry as <code>CUSTOM</code> (such as raw Vertex AI Reasoning Engine REST endpoints) lack the A2A JSON-RPC interface and are ignored or rejected by Gemini Enterprise.</li>
+</ul>
+<hr />
+<h3>2. Why A2A is Supported with Cloud Run and GKE</h3>
+<p>The A2A Protocol is an <strong>application-layer HTTP protocol</strong>:<br />
+* <strong>Transport</strong>: HTTP/1.1 or HTTP/2 with JSON-RPC 2.0 message semantics.<br />
+* <strong>Streaming</strong>: Server-Sent Events (SSE) for streaming token-by-token responses and real-time task status updates (<code>message/stream</code>).<br />
+* <strong>Endpoint Control</strong>: An A2A server must listen on a network port, inspect arbitrary JSON-RPC methods, maintain session state, and dispatch events.</p>
+<p><strong>Why Cloud Run and GKE are the Ideal A2A Runtimes</strong>:<br />
+1. <strong>Full Protocol Control</strong>: Cloud Run and GKE run arbitrary Docker containers. You can run any standard web server (<code>Starlette</code>, <code>FastAPI</code>, <code>uvicorn</code>, Go, or Node.js) running the <code>a2a-sdk</code> server stack (<code>A2AStarletteApplication</code>).<br />
+2. <strong>Server-Sent Events (SSE) Support</strong>: Both Cloud Run and GKE natively support long-lived HTTP streaming connections required for <code>message/stream</code>.<br />
+3. <strong>Flexible Authentication</strong>: In Cloud Run and GKE, authentication can be handled at the ingress level (IAM <code>roles/run.invoker</code>, Cloud Armor, or Agent Gateway) or within the application, decoupling client authentication from underlying Google Cloud APIs.</p>
+<hr />
+<h3>3. Why Vertex AI Agent Engine Uses ADK (and Why it is Not A2A)</h3>
+<p><strong>Vertex AI Agent Engine (Reasoning Engine)</strong> is a <strong>fully managed Google Cloud PaaS</strong> for deploying ADK agents:<br />
+* <strong>The Hosting Model</strong>: When you run <code>adk deploy agent_engine</code> or use the Vertex AI Python SDK, Vertex AI packages your Python ADK agent (<code>LlmAgent</code>, <code>Runner</code>, tools) into an internal microservice container.<br />
+* <strong>The API Frontend</strong>: Vertex AI does <strong>not</strong> expose a raw web server or open HTTP ports. Instead, all traffic passes through Google's unified API frontend (<code>aiplatform.googleapis.com</code>).<br />
+* <strong>The Protocol</strong>: Vertex AI exposes a <strong>Google Cloud Resource API</strong> governed by Protobuf schemas:<br />
+  - <code>POST https://{region}-aiplatform.googleapis.com/v1/.../reasoningEngines/{id}:query</code><br />
+  - <code>POST https://{region}-aiplatform.googleapis.com/v1/.../reasoningEngines/{id}:streamQuery</code><br />
+  - Expected Request Schema:<br />
+<code>json
+    {
+      "input": {
+        "message": "What is on the menu?"
+      }
+    }</code><br />
+* <strong>The Protobuf Parser Barrier</strong>: When Gemini Enterprise sends an A2A JSON-RPC payload (<code>{"jsonrpc": "2.0", "id": 1, "method": "message/stream", "params": {...}}</code>) directly to Vertex AI, Google's Protobuf API gateway cannot parse the fields and immediately aborts:<br />
+<code>text
+  Invalid JSON payload received. Unknown name "jsonrpc": Cannot find field.
+  Invalid JSON payload received. Unknown name "method": Cannot find field.
+  Invalid JSON payload received. Unknown name "params": Cannot find field.</code></p>
+<hr />
+<h3>4. Comprehensive Architectural Comparison</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Dimension</th>
+<th style="text-align: left;">Vertex AI Agent Engine (Reasoning Engine)</th>
+<th style="text-align: left;">Cloud Run / GKE A2A Server</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Primary Purpose</strong></td>
+<td style="text-align: left;">Managed code-level execution of ADK Python agents</td>
+<td style="text-align: left;">Open, interoperable Agent-to-Agent web service</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Interface Protocol</strong></td>
+<td style="text-align: left;"><strong>Google Cloud REST / Protobuf</strong> (<code>aiplatform.googleapis.com</code>)</td>
+<td style="text-align: left;"><strong>Open A2A JSON-RPC 2.0 over HTTP</strong> (<code>a2a-sdk</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Streaming Mechanism</strong></td>
+<td style="text-align: left;">Google Cloud Protobuf chunk streaming (<code>:streamQuery</code>)</td>
+<td style="text-align: left;">Server-Sent Events (SSE) (<code>message/stream</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Expected Request</strong></td>
+<td style="text-align: left;"><code>{"input": {"message": "..."}}</code></td>
+<td style="text-align: left;"><code>{"jsonrpc": "2.0", "method": "...", "params": {...}}</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Agent Registry Registration</strong></td>
+<td style="text-align: left;"><code>type: "CUSTOM"</code>, <code>protocolBinding: "HTTP_JSON"</code></td>
+<td style="text-align: left;"><code>type: "A2A_AGENT"</code>, <code>card: "A2A_AGENT_CARD"</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Gemini Enterprise Import</strong></td>
+<td style="text-align: left;">❌ <strong>Not Supported</strong> (GE requires A2A JSON-RPC)</td>
+<td style="text-align: left;">✅ <strong>Natively Supported</strong> (Standard A2A flow)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Calling Mechanisms</strong></td>
+<td style="text-align: left;">Vertex AI Python SDK, gcloud, internal agent-to-agent ADK calls</td>
+<td style="text-align: left;">Gemini Enterprise, external A2A clients, curl</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Authentication</strong></td>
+<td style="text-align: left;">Google Cloud IAM (<code>roles/aiplatform.user</code> on caller)</td>
+<td style="text-align: left;">IAM <code>roles/run.invoker</code>, Agent Gateway IAP, or Public</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3>5. How the Architecture Fits Together</h3>
+<pre class="codehilite"><code>┌─────────────────────────────────────────────────────────────┐
+│ Gemini Enterprise (Assistant)                               │
+│ • Requires: A2A Protocol                                    │
+│ • Dispatches: JSON-RPC 2.0 (method: &quot;message/stream&quot;)       │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼ [Discovers via Agent Registry (type: A2A_AGENT)]
+┌─────────────────────────────────────────────────────────────┐
+│ Central Agent Gateway / IAP (deepakmichaelprod)             │
+│ • Enforces: Security policies &amp; IAP egressor authorization  │
+│ • Routes: To Cloud Run backend                              │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼ [HTTP / JSON-RPC 2.0]
+┌─────────────────────────────────────────────────────────────┐
+│ Cloud Run A2A Service (burger-seller-a2a)                   │
+│ • Runs: A2AStarletteApplication (a2a-sdk)                   │
+│ • Translates: A2A JSON-RPC ➔ ADK Runner                     │
+│ • Service Account: 114740196141-compute@developer...        │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼ [Native Google Cloud ADC via Service Account]
+┌─────────────────────────────────────────────────────────────┐
+│ Vertex AI Gemini 2.5 Flash API                              │
+│ • Executes: LlmAgent inference &amp; tool execution             │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+
+<hr />
+<h2>#1. Cloud Run Deployment Details</h2>
+<p>The Cloud Run service uses <code>google-adk</code> for agent logic and <code>a2a-sdk</code> to serve the A2A JSON-RPC protocol over HTTP with Server-Sent Events (SSE).</p>
+<h3>1.1 Project Structure (<code>burger_a2a_service/</code>)</h3>
+<pre class="codehilite"><code>burger_a2a_service/
+├── Dockerfile
+├── requirements.txt
+├── agent.py              # ADK Agent definition &amp; tools
+├── agent_executor.py     # ADK-to-A2A execution adapter
+└── __main__.py           # Starlette A2A application entrypoint
+</code></pre>
+
+<h3>1.2 <code>requirements.txt</code></h3>
+<pre class="codehilite"><code class="language-text">a2a-sdk==0.3.0
+google-adk&gt;=1.7.0
+google-genai&gt;=1.0.0
+pydantic&gt;=2.0.0
+starlette&gt;=0.40.0
+uvicorn&gt;=0.30.0
+click&gt;=8.0.0
+python-dotenv&gt;=1.0.0
+</code></pre>
+
+<h3>1.3 <code>Dockerfile</code></h3>
+<pre class="codehilite"><code class="language-dockerfile">FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PORT=8080
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD [&quot;python&quot;, &quot;__main__.py&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;8080&quot;]
+</code></pre>
+
+<h3>1.4 <code>agent.py</code> (ADK Agent Logic)</h3>
+<pre class="codehilite"><code class="language-python">from google.adk.agents import LlmAgent
+from pydantic import BaseModel
+import uuid
+
+class OrderItem(BaseModel):
+    name: str
+    quantity: int
+    price: int
+
+class Order(BaseModel):
+    order_id: str
+    status: str
+    order_items: list[OrderItem]
+
+def create_burger_order(order_items: list[OrderItem]) -&gt; str:
+    &quot;&quot;&quot;Creates a new burger order with the given order items.&quot;&quot;&quot;
+    try:
+        order_id = str(uuid.uuid4())
+        order = Order(order_id=order_id, status=&quot;created&quot;, order_items=order_items)
+        return f&quot;Order {order.model_dump()} has been created successfully. Order ID: {order_id}&quot;
+    except Exception as e:
+        return f&quot;Error creating order: {e}&quot;
+
+def get_burger_menu() -&gt; str:
+    &quot;&quot;&quot;Retrieves the full menu of available burgers and their prices in IDR.&quot;&quot;&quot;
+    return &quot;&quot;&quot;Available Burger Menu:
+- Classic Cheeseburger: IDR 85,000
+- Double Cheeseburger: IDR 110,000
+- Spicy Chicken Burger: IDR 80,000
+- Spicy Cajun Burger: IDR 85,000&quot;&quot;&quot;
+
+burger_agent = LlmAgent(
+    name=&quot;burger_seller_agent&quot;,
+    model=&quot;gemini-2.5-flash&quot;,
+    instruction=&quot;&quot;&quot;You are a specialized assistant for a burger store.
+Your sole purpose is to answer questions about the burger menu, prices, and order creation.
+If the user asks about anything other than the burger menu or ordering, politely decline.
+
+Available burger menu:
+- Classic Cheeseburger: IDR 85K
+- Double Cheeseburger: IDR 110K
+- Spicy Chicken Burger: IDR 80K
+- Spicy Cajun Burger: IDR 85K
+
+Rules:
+1. Always verify the requested burger item is in the menu.
+2. When the user confirms an order, invoke create_burger_order.&quot;&quot;&quot;,
+    tools=[get_burger_menu, create_burger_order]
+)
+</code></pre>
+
+<h3>1.5 <code>agent_executor.py</code> (A2A Protocol Adapter)</h3>
+<pre class="codehilite"><code class="language-python">from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.events import EventQueue
+from a2a.server.tasks import TaskUpdater
+from a2a.types import Part, TaskState, TextPart
+from a2a.utils import new_agent_text_message, new_task
+from google.adk.artifacts import InMemoryArtifactService
+from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+class ADKAgentExecutor(AgentExecutor):
+    def __init__(self, agent, status_message='Processing burger order...', artifact_name='response'):
+        self.agent = agent
+        self.status_message = status_message
+        self.artifact_name = artifact_name
+        self.runner = Runner(
+            app_name=agent.name,
+            agent=agent,
+            artifact_service=InMemoryArtifactService(),
+            session_service=InMemorySessionService(),
+            memory_service=InMemoryMemoryService(),
+        )
+
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        raise NotImplementedError('Cancellation is not implemented.')
+
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        if not context.message:
+            raise ValueError('Message should be present in request context')
+
+        query = context.get_user_input()
+        task = context.current_task or new_task(context.message)
+        await event_queue.enqueue_event(task)
+
+        updater = TaskUpdater(event_queue, task.id, task.context_id)
+        user_id = 'gemini_enterprise_user'
+
+        try:
+            await updater.update_status(
+                TaskState.working,
+                new_agent_text_message(self.status_message, task.context_id, task.id),
+            )
+
+            session = await self.runner.session_service.get_session(
+                app_name=self.agent.name,
+                user_id=user_id,
+                session_id=task.context_id,
+            )
+            if not session:
+                session = await self.runner.session_service.create_session(
+                    app_name=self.agent.name,
+                    user_id=user_id,
+                    state={},
+                    session_id=task.context_id,
+                )
+
+            content = types.Content(role='user', parts=[types.Part.from_text(text=query)])
+            response_text = ''
+            async for event in self.runner.run_async(user_id=user_id, session_id=session.id, new_message=content):
+                if event.is_final_response() and event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            response_text += part.text + '\n'
+
+            if not response_text:
+                response_text = &quot;Task completed.&quot;
+
+            await updater.add_artifact([Part(root=TextPart(text=response_text))], name=self.artifact_name)
+            await updater.complete()
+
+        except Exception as e:
+            await updater.update_status(
+                TaskState.failed,
+                new_agent_text_message(f'Error: {e!s}', task.context_id, task.id),
+                final=True,
+            )
+</code></pre>
+
+<h3>1.6 <code>__main__.py</code> (Starlette Server Entrypoint)</h3>
+<pre class="codehilite"><code class="language-python">import asyncio, functools, logging, os, click, uvicorn
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import AgentCapabilities, AgentCard, AgentSkill
+from agent import burger_agent
+from agent_executor import ADKAgentExecutor
+from starlette.applications import Starlette
+
+os.environ[&quot;GOOGLE_GENAI_USE_VERTEXAI&quot;] = &quot;True&quot;
+
+def make_sync(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return asyncio.run(func(*args, **kwargs))
+    return wrapper
+
+@click.command()
+@click.option('--host', default='0.0.0.0')
+@click.option('--port', default=8080, type=int)
+@make_sync
+async def main(host, port):
+    app_url = os.environ.get('APP_URL', f'http://{host}:{port}')
+
+    agent_card = AgentCard(
+        name=&quot;Burger Seller Agent&quot;,
+        description=&quot;Specialized seller agent for browsing burger menus, checking pricing, and placing orders.&quot;,
+        version='1.0.0',
+        url=app_url,
+        default_input_modes=['text', 'text/plain'],
+        default_output_modes=['text', 'text/plain'],
+        capabilities=AgentCapabilities(streaming=True),
+        skills=[
+            AgentSkill(
+                id='get_burger_menu',
+                name='get_burger_menu',
+                description='Retrieves the full menu of available burgers and their prices in IDR.',
+                tags=['menu', 'food', 'pricing'],
+                examples=['What burgers are available?', 'Can I see the burger menu and prices?'],
+            ),
+            AgentSkill(
+                id='create_burger_order',
+                name='create_burger_order',
+                description='Places an order for one or more burger menu items and returns an order confirmation ID.',
+                tags=['order', 'food', 'burger', 'checkout'],
+                examples=['Order 1 Classic Cheeseburger', 'I would like to order 2 Double Cheeseburgers'],
+            ),
+        ],
+    )
+
+    request_handler = DefaultRequestHandler(
+        agent_executor=ADKAgentExecutor(agent=burger_agent),
+        task_store=InMemoryTaskStore(),
+    )
+
+    a2a_app = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
+    app = Starlette(routes=a2a_app.routes(), middleware=[])
+
+    config = uvicorn.Config(app, host=host, port=port, log_level='info')
+    server = uvicorn.Server(config)
+    await server.serve()
+
+if __name__ == '__main__':
+    main()
+</code></pre>
+
+<hr />
+<h2>#2. The Canonical A2A Agent Card</h2>
+<p>Save this configuration as <code>burger_agent_card.json</code>. Replace <code>https://burger-seller-a2a-114740196141.us-central1.run.app</code> with your Cloud Run URL.</p>
+<pre class="codehilite"><code class="language-json">{
+  &quot;name&quot;: &quot;Burger Seller Agent&quot;,
+  &quot;description&quot;: &quot;Specialized seller agent for browsing burger menus, checking pricing, and placing orders.&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;protocolVersion&quot;: &quot;0.3.0&quot;,
+  &quot;preferredTransport&quot;: &quot;JSONRPC&quot;,
+  &quot;url&quot;: &quot;https://burger-seller-a2a-114740196141.us-central1.run.app&quot;,
+  &quot;provider&quot;: {
+    &quot;organization&quot;: &quot;Burger Store&quot;,
+    &quot;url&quot;: &quot;https://burger.example.com&quot;
+  },
+  &quot;documentationUrl&quot;: &quot;https://burger.example.com/docs&quot;,
+  &quot;capabilities&quot;: {
+    &quot;streaming&quot;: true,
+    &quot;pushNotifications&quot;: false
+  },
+  &quot;defaultInputModes&quot;: [
+    &quot;text/plain&quot;
+  ],
+  &quot;defaultOutputModes&quot;: [
+    &quot;text/plain&quot;
+  ],
+  &quot;skills&quot;: [
+    {
+      &quot;id&quot;: &quot;get_burger_menu&quot;,
+      &quot;name&quot;: &quot;get_burger_menu&quot;,
+      &quot;description&quot;: &quot;Retrieves the full menu of available burgers and their prices in IDR.&quot;,
+      &quot;tags&quot;: [
+        &quot;menu&quot;,
+        &quot;food&quot;,
+        &quot;pricing&quot;
+      ],
+      &quot;examples&quot;: [
+        &quot;What burgers are available?&quot;,
+        &quot;Can I see the burger menu and prices?&quot;
+      ],
+      &quot;inputModes&quot;: [
+        &quot;text/plain&quot;
+      ],
+      &quot;outputModes&quot;: [
+        &quot;text/plain&quot;
+      ]
+    },
+    {
+      &quot;id&quot;: &quot;create_burger_order&quot;,
+      &quot;name&quot;: &quot;create_burger_order&quot;,
+      &quot;description&quot;: &quot;Places an order for one or more burger menu items and returns an order confirmation ID.&quot;,
+      &quot;tags&quot;: [
+        &quot;order&quot;,
+        &quot;food&quot;,
+        &quot;burger&quot;,
+        &quot;checkout&quot;
+      ],
+      &quot;examples&quot;: [
+        &quot;Order 1 Classic Cheeseburger&quot;,
+        &quot;I would like to order 2 Double Cheeseburgers&quot;
+      ],
+      &quot;inputModes&quot;: [
+        &quot;text/plain&quot;
+      ],
+      &quot;outputModes&quot;: [
+        &quot;text/plain&quot;
+      ]
+    }
+  ]
+}
+</code></pre>
+
+<blockquote>
+<p>[!NOTE]<br />
+When deployed with <code>--allow-unauthenticated</code> on Cloud Run, the <code>securitySchemes</code> block is completely omitted. Gemini Enterprise will import and execute the agent with <strong>zero OAuth prompts, zero consent screens, and no corporate account blocks</strong>.</p>
+</blockquote>
+<hr />
+<h2>#3. Agent Registry Deployment</h2>
+<p>Update the service entry in <code>PROJECT_GOVERNANCE</code> (<code>deepakmichaelprod</code>):</p>
+<pre class="codehilite"><code class="language-bash">CARD_CONTENT=$(cat burger_agent_card.json)
+
+gcloud alpha agent-registry services update burger-seller-agent \
+  --project=deepakmichaelprod \
+  --location=us-central1 \
+  --agent-spec-type=a2a-agent-card \
+  --agent-spec-content=&quot;${CARD_CONTENT}&quot; \
+  --clear-interfaces
+</code></pre>
+
+<hr />
+<h2>#4. IAM &amp; Security Configuration</h2>
+<p>A complete 4-layer IAM model guarantees secure, authenticated communication without requiring end-user OAuth consent screens:</p>
+<pre class="codehilite"><code>┌────────────────────────────────────────────────────────┐
+│ Layer 4: IAP Egressor (Central Agent Gateway)          │
+│ Authorizes Discovery Engine SPIFFE Identity via IAP    │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│ Layer 3: Project Discovery &amp; Gateway Routing           │
+│ Allows Discovery Engine SA to list agents &amp; routes     │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│ Layer 2: Cloud Run Invoker (Service-Level)             │
+│ Allows Discovery Engine SA to invoke burger-seller-a2a │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│ Layer 1: Runtime Model Execution (ADC)                 │
+│ Allows Cloud Run Compute SA to invoke Gemini Flash     │
+└────────────────────────────────────────────────────────┘
+</code></pre>
+
+<hr />
+<h3>Layer 1: Cloud Run Compute Service Account (Model Execution)</h3>
+<p>The service account running Cloud Run (<code>114740196141-compute@developer.gserviceaccount.com</code>) needs permissions to invoke Vertex AI Gemini 2.5 Flash models via Application Default Credentials (ADC):</p>
+<pre class="codehilite"><code class="language-bash">gcloud projects add-iam-policy-binding deepakmichaelprod \
+  --member=&quot;serviceAccount:114740196141-compute@developer.gserviceaccount.com&quot; \
+  --role=&quot;roles/aiplatform.user&quot;
+</code></pre>
+
+<hr />
+<h3>Layer 2: Cloud Run Service Invocation Role (<code>roles/run.invoker</code>)</h3>
+<ul>
+<li><strong>Resource</strong>: <code>burger-seller-a2a</code> (Cloud Run service in <code>deepakmichaelprod</code>, region <code>us-central1</code>)</li>
+<li><strong>Role</strong>: <code>roles/run.invoker</code></li>
+<li><strong>Target</strong>: <code>serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com</code></li>
+<li><strong>Rationale</strong>: Organization policy <code>constraints/iam.allowedPolicyMemberDomains</code> blocks public unauthenticated access (<code>allUsers</code>). Binding <code>roles/run.invoker</code> directly to Gemini Enterprise's Discovery Engine service account allows authenticated service-to-service invocation without needing user OAuth logins, passwords, or client secrets.</li>
+</ul>
+<pre class="codehilite"><code class="language-bash">gcloud run services add-iam-policy-binding burger-seller-a2a \
+  --region=us-central1 \
+  --project=deepakmichaelprod \
+  --member=&quot;serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com&quot; \
+  --role=&quot;roles/run.invoker&quot;
+</code></pre>
+
+<hr />
+<h3>Layer 3: Discovery Engine Service Agent (Project-Level Discovery &amp; Routing)</h3>
+<p>Gemini Enterprise's service agent requires visibility into Agent Registry and Central Agent Gateway routing topology:</p>
+<pre class="codehilite"><code class="language-bash"># 1. Allow Gemini Enterprise to discover and list registered agents in Agent Registry
+gcloud projects add-iam-policy-binding deepakmichaelprod \
+  --member=&quot;serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com&quot; \
+  --role=&quot;roles/agentregistry.viewer&quot;
+
+# 2. Allow Gemini Enterprise to inspect Central Agent Gateway routing topology
+gcloud projects add-iam-policy-binding deepakmichaelprod \
+  --member=&quot;serviceAccount:service-114740196141@gcp-sa-discoveryengine.iam.gserviceaccount.com&quot; \
+  --role=&quot;roles/networkservices.viewer&quot;
+</code></pre>
+
+<hr />
+<h3>Layer 4: IAP Egress Authorization on Agent Resource (<code>roles/iap.egressor</code>)</h3>
+<ul>
+<li><strong>Resource</strong>: Agent Registry Resource (<code>agentregistry-00000000-0000-0000-4c41-4c6ec39e5f39</code>)</li>
+<li><strong>Role</strong>: <code>roles/iap.egressor</code></li>
+<li><strong>Target</strong>: The Gemini Enterprise Assistant's managed SPIFFE identity:<br />
+<code>text
+  principal://agents.global.org-1015654926499.system.id.goog/resources/discoveryengine/projects/114740196141/locations/global/engines/deepak-ge-app_1787348960235/assistants/default_assistant/agents/registry/*</code></li>
+<li><strong>Rationale</strong>: The Central Agent Gateway enforces Identity-Aware Proxy (IAP) authorization (<code>agw-egress-iap-authzpolicy</code>). Without this binding, the gateway intercepts requests from Gemini Enterprise and returns HTTP 403 Forbidden.</li>
+</ul>
+<pre class="codehilite"><code class="language-bash">gcloud beta iap web add-iam-policy-binding \
+  --project=deepakmichaelprod \
+  --region=us-central1 \
+  --resource-type=agent-registry \
+  --agent=agentregistry-00000000-0000-0000-4c41-4c6ec39e5f39 \
+  --role=&quot;roles/iap.egressor&quot; \
+  --member=&quot;principal://agents.global.org-1015654926499.system.id.goog/resources/discoveryengine/projects/114740196141/locations/global/engines/deepak-ge-app_1787348960235/assistants/default_assistant/agents/registry/*&quot;
+</code></pre>
+
+<hr />
+<h2>#5. Deploy in <code>deepakmichaelprod</code> Project</h2>
+<h3>Build and Deploy Command:</h3>
+<pre class="codehilite"><code class="language-bash">gcloud run deploy burger-seller-a2a \
+  --source=burger_a2a_service \
+  --region=us-central1 \
+  --project=deepakmichaelprod \
+  --allow-unauthenticated \
+  --service-account=114740196141-compute@developer.gserviceaccount.com
+</code></pre>
+
+<h3>Verification with <code>curl</code>:</h3>
+<p>Once deployed, retrieve the service URL and test the A2A <code>message/stream</code> JSON-RPC endpoint directly:</p>
+<pre class="codehilite"><code class="language-bash">SERVICE_URL=$(gcloud run services describe burger-seller-a2a --project=deepakmichaelprod --region=us-central1 --format='value(status.url)')
+
+# Send A2A JSON-RPC 2.0 Request
+curl -X POST &quot;${SERVICE_URL}&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;jsonrpc&quot;: &quot;2.0&quot;,
+    &quot;id&quot;: 1,
+    &quot;method&quot;: &quot;message/stream&quot;,
+    &quot;params&quot;: {
+      &quot;message&quot;: {
+        &quot;parts&quot;: [
+          {
+            &quot;text&quot;: &quot;What burgers do you have on the menu and what are the prices?&quot;
+          }
+        ]
+      }
+    }
+  }'
+</code></pre>
+
+<hr />
+<h2>#6. Verification &amp; Observability in Central Agent Gateway</h2>
+<p>When Gemini Enterprise invokes the imported A2A agent, traffic is routed through the Central Agent Gateway (<code>agw-egress</code>). The gateway performs IAP authentication, enforces security policies, logs the JSON-RPC method, and streams the response.</p>
+<h3>6.1 Gcloud Logging Commands for Agent Gateway</h3>
+<h4>Command 1: Formatted Table View (Quick Status Check)</h4>
+<pre class="codehilite"><code class="language-bash">gcloud logging read \
+  'logName=&quot;projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests&quot; AND (httpRequest.requestUrl=~&quot;run.app&quot; OR jsonPayload.enforcedGatewaySecurityPolicy.hostname=~&quot;run.app&quot;)' \
+  --project=deepakmichaelprod \
+  --limit=5 \
+  --format=&quot;table(timestamp.date('%H:%M:%S'):label=TIME, httpRequest.status:label=STATUS, jsonPayload.agentGatewayInfo.mcpInfo.method:label=METHOD, jsonPayload.authzPolicyInfo.result:label=IAP_AUTHZ, httpRequest.latency:label=LATENCY)&quot;
+</code></pre>
+
+<h4>Command 2: Detailed JSON View (Full Policy Evaluation &amp; Tracing)</h4>
+<pre class="codehilite"><code class="language-bash">gcloud logging read \
+  'logName=&quot;projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests&quot; AND (httpRequest.requestUrl=~&quot;run.app&quot; OR jsonPayload.enforcedGatewaySecurityPolicy.hostname=~&quot;run.app&quot;)' \
+  --project=deepakmichaelprod \
+  --limit=1 \
+  --format=&quot;json&quot;
+</code></pre>
+
+<h4>Command 3: Cloud Run Execution Logs (Model Inference &amp; ADK Runner)</h4>
+<pre class="codehilite"><code class="language-bash">gcloud logging read \
+  'resource.type=&quot;cloud_run_revision&quot; AND resource.labels.service_name=&quot;burger-seller-a2a&quot;' \
+  --project=deepakmichaelprod \
+  --limit=10 \
+  --format=&quot;table(timestamp.date('%H:%M:%S'):label=TIME, severity, textPayload)&quot;
+</code></pre>
+
+<hr />
+<h3>6.2 Verified Real Production Gateway Log Entry</h3>
+<pre class="codehilite"><code class="language-json">{
+  &quot;resource&quot;: {
+    &quot;type&quot;: &quot;networkservices.googleapis.com/Gateway&quot;,
+    &quot;labels&quot;: {
+      &quot;gateway_name&quot;: &quot;agw-egress&quot;,
+      &quot;gateway_type&quot;: &quot;SECURE_WEB_GATEWAY&quot;,
+      &quot;location&quot;: &quot;us-central1&quot;,
+      &quot;network_name&quot;: &quot;projects/y9a058415cac84448p-tp/global/networks/uk1-25feb-2-vpc4&quot;,
+      &quot;resource_container&quot;: &quot;114740196141&quot;
+    }
+  },
+  &quot;httpRequest&quot;: {
+    &quot;latency&quot;: &quot;1.147154s&quot;,
+    &quot;protocol&quot;: &quot;HTTP/1.1&quot;,
+    &quot;requestMethod&quot;: &quot;POST&quot;,
+    &quot;requestUrl&quot;: &quot;https://burger-seller-a2a-114740196141.us-central1.run.app/&quot;,
+    &quot;responseSize&quot;: &quot;2006&quot;,
+    &quot;serverIp&quot;: &quot;34.143.75.2:443&quot;,
+    &quot;status&quot;: 200,
+    &quot;userAgent&quot;: &quot;python-httpx/0.26.0&quot;
+  },
+  &quot;jsonPayload&quot;: {
+    &quot;@type&quot;: &quot;type.googleapis.com/google.cloud.loadbalancing.type.LoadBalancerLogEntry&quot;,
+    &quot;agentGatewayInfo&quot;: {
+      &quot;agentRegistryResource&quot;: &quot;projects/114740196141/locations/us-central1/agents/agentregistry-00000000-0000-0000-4c41-4c6ec39e5f39&quot;,
+      &quot;mcpInfo&quot;: {
+        &quot;method&quot;: &quot;message/stream&quot;
+      }
+    },
+    &quot;authzPolicyInfo&quot;: {
+      &quot;policies&quot;: [
+        {
+          &quot;name&quot;: &quot;projects/978983713504/locations/us-central1/authzPolicies/agw-egress-iap-authzpolicy&quot;,
+          &quot;result&quot;: &quot;ALLOWED&quot;
+        }
+      ],
+      &quot;result&quot;: &quot;ALLOWED&quot;
+    },
+    &quot;enforcedGatewaySecurityPolicy&quot;: {
+      &quot;hostname&quot;: &quot;burger-seller-a2a-114740196141.us-central1.run.app&quot;,
+      &quot;matchedRules&quot;: [
+        {
+          &quot;action&quot;: &quot;ALLOWED&quot;,
+          &quot;name&quot;: &quot;default_denied&quot;
+        }
+      ]
+    }
+  },
+  &quot;logName&quot;: &quot;projects/deepakmichaelprod/logs/networkservices.googleapis.com%2Fgateway_requests&quot;,
+  &quot;severity&quot;: &quot;INFO&quot;,
+  &quot;status&quot;: 200
+}
+</code></pre>
+
+<h3>Key Verification Highlights:</h3>
+<ol>
+<li><strong><code>httpRequest.status: 200</code></strong> — Confirms successful execution without network or application failures.</li>
+<li><strong><code>agentGatewayInfo.mcpInfo.method: "message/stream"</code></strong> — Confirms Gemini Enterprise is using open A2A JSON-RPC streaming.</li>
+<li><strong><code>authzPolicyInfo.result: "ALLOWED"</code></strong> — Confirms Identity-Aware Proxy (IAP) successfully authorized the Discovery Engine assistant's SPIFFE identity (<code>principal://agents.global.org-1015654926499...</code>).</li>
+<li><strong><code>agentGatewayInfo.agentRegistryResource</code></strong> — Confirms routing was dynamically resolved via Google Cloud Agent Registry.</li>
+</ol>
+</body>
+</html>
