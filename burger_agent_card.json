@@ -20,7 +20,7 @@
       "description": "Google Cloud OAuth 2.0 Authentication",
       "flows": {
         "authorizationCode": {
-          "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+          "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
           "tokenUrl": "https://oauth2.googleapis.com/token",
           "scopes": {
             "https://www.googleapis.com/auth/cloud-platform": "Access to Google Cloud Platform"
