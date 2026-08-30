@@ -171,7 +171,7 @@ def main():
                 yield chunk
 
     common_config = {
-        "staging_bucket": staging_bucket_name,
+        "staging_bucket": staging_bucket_uri,
         "requirements": [
             "google-cloud-aiplatform[agent_engines]>=1.149.0",
             "google-adk[a2a,agent-identity]==1.34.0",
