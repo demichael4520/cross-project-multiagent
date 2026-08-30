@@ -178,6 +178,9 @@ def main():
 
     playground_app = PlaygroundCompatibleAdkAgent(app=adk_app)
 
+    load_dotenv("burger_agent.env")
+    load_dotenv("pizza_agent.env")
+
     raw_env_vars = {
         "GOOGLE_GENAI_USE_VERTEXAI": "true",
         "AGENT_PROJECT_ID": args.project,
@@ -219,6 +222,10 @@ def main():
     concierge_name = deployed_concierge.api_resource.name
     print(f"Purchasing Concierge deployed: {concierge_name}")
     print(f"Concierge ID: {concierge_name}")
+
+    with open("concierge_agent.env", "w") as f:
+        f.write(f"CONCIERGE_AGENT_ID={concierge_name}\n")
+    print("Saved concierge agent ID to concierge_agent.env")
 
 if __name__ == "__main__":
     main()

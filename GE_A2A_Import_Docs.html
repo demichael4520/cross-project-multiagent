@@ -95,6 +95,88 @@
 <h1>Gemini Enterprise (GE) A2A Agent Deployment &amp; Import Guide</h1>
 <p>This document is the definitive guide for building, deploying, and importing a <strong>Native A2A (Agent-to-Agent) Protocol Agent</strong> into <strong>Gemini Enterprise (Discovery Engine)</strong> using <strong>Google Cloud Run</strong> and <strong>Agent Registry</strong> in project <code>deepakmichaelprod</code>.</p>
 <hr />
+<h2>Overview &amp; Multi-Agent Ecosystem</h2>
+<p>The A2A agents in the registry can be custom agents built by you and your colleagues and deployed on various runtimes such as Agent Runtime on Gemini Enterprise Agent Platform, Cloud Run, or Google Kubernetes Engine (GKE). These agents can also be agents built across Google products, such as Google Workspace.</p>
+<p>When the <strong>Gemini Enterprise App</strong> is configured to route through the <strong>Agent Gateway</strong>, A2A agents defined in the <strong>Agent Registry</strong> are reachable through the Agent Gateway and subject to its security and governance policies (such as IAP egress authorization, authorization policies, and Model Armor).</p>
+<p>A2A agent connectivity is supported across two network models:<br />
+1. <strong>Private Network Routing:</strong> Over internal VPC networks routed through an <strong>Agent Gateway deployed with a Private Service Connect Interface (PSC-I) and DNS Peering</strong>.<br />
+2. <strong>Public Routing:</strong> Directly over the public internet routed through the Agent Gateway.</p>
+<blockquote>
+<p>[!IMPORTANT]<br />
+<strong>Certificate Authority (CA) Requirement:</strong> In both private (Agent Gateway with PSC-I and DNS Peering) and public deployment scenarios, the target A2A agent endpoint must use TLS/HTTPS backed by a <strong>publicly trusted Certificate Authority (CA)</strong>. Self-signed certificates or internal, untrusted private CAs are not supported.</p>
+</blockquote>
+<hr />
+<h2>Requirements &amp; Compatibility</h2>
+<h3>1. A2A Protocol &amp; SDK Versions</h3>
+<p>To ensure seamless discovery and streaming execution with Gemini Enterprise and Agent Gateway, the agent must adhere to the validated protocol and SDK specifications:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Component</th>
+<th style="text-align: left;">Validated Working Version</th>
+<th style="text-align: left;">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>A2A Protocol Version</strong></td>
+<td style="text-align: left;"><strong><code>0.3.0</code></strong></td>
+<td style="text-align: left;">Defined in <code>protocolVersion</code> inside the Agent Card.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Transport</strong></td>
+<td style="text-align: left;"><strong><code>JSONRPC</code></strong></td>
+<td style="text-align: left;">JSON-RPC 2.0 over HTTP with Server-Sent Events (SSE) for streaming (<code>message/stream</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Python SDK (<code>a2a-sdk</code>)</strong></td>
+<td style="text-align: left;"><strong><code>0.3.0</code></strong></td>
+<td style="text-align: left;"><code>a2a-sdk==0.3.0</code> (provides <code>A2AStarletteApplication</code> &amp; <code>AgentExecutor</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Google ADK</strong></td>
+<td style="text-align: left;"><strong><code>&gt;= 1.7.0</code></strong> <em>(validated on <code>1.34.0</code>)</em></td>
+<td style="text-align: left;"><code>google-adk[a2a,agent-identity]</code> for underlying agent reasoning &amp; tools.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Python Runtime</strong></td>
+<td style="text-align: left;"><strong><code>3.11</code> – <code>3.12</code></strong></td>
+<td style="text-align: left;"><code>python:3.11-slim</code> container base.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3>2. A2A Agent Card Specification (<code>A2A_AGENT_CARD</code>)</h3>
+<p>When registering the agent in <strong>Agent Registry</strong>, the resource must be registered with <code>protocols.type: "A2A_AGENT"</code> and supply an Agent Card JSON conforming to the following structure:</p>
+<h4>Mandatory Fields &amp; Schema:</h4>
+<ul>
+<li><strong><code>name</code></strong> <em>(string)</em>: Human-readable agent name (e.g., <code>"Burger Seller Agent"</code>).</li>
+<li><strong><code>description</code></strong> <em>(string)</em>: Clear description of agent domain and functionality.</li>
+<li><strong><code>version</code></strong> <em>(string)</em>: Application version (e.g., <code>"1.0.0"</code>).</li>
+<li><strong><code>protocolVersion</code></strong> <em>(string)</em>: <strong>Must be <code>"0.3.0"</code></strong>.</li>
+<li><strong><code>preferredTransport</code></strong> <em>(string)</em>: <strong>Must be <code>"JSONRPC"</code></strong>.</li>
+<li><strong><code>url</code></strong> <em>(string)</em>: Target HTTPS base URL for the A2A server.</li>
+<li><strong><code>capabilities</code></strong> <em>(object)</em>:</li>
+<li><code>streaming: true</code> <em>(Required for token streaming and real-time task updates)</em></li>
+<li><code>pushNotifications: false</code></li>
+<li><strong><code>defaultInputModes</code> / <code>defaultOutputModes</code></strong> <em>(array)</em>: <code>["text/plain"]</code></li>
+<li><strong><code>skills</code></strong> <em>(array of objects)</em>:</li>
+<li><code>id</code>: Unique identifier (e.g., <code>"get_burger_menu"</code>).</li>
+<li><code>name</code>: Descriptive skill name.</li>
+<li><code>description</code>: Clear purpose of the skill used by Gemini Enterprise orchestrator for routing.</li>
+<li><code>tags</code>: Array of domain keywords (e.g., <code>["menu", "food", "pricing"]</code>).</li>
+<li><code>examples</code>: Sample user queries to ground intent classification.</li>
+<li><code>inputModes</code> / <code>outputModes</code>: <code>["text/plain"]</code>.</li>
+</ul>
+<hr />
+<h3>3. Networking &amp; TLS Prerequisites</h3>
+<ol>
+<li><strong>Publicly Signed Certificate Authority (CA):</strong></li>
+<li>The A2A agent endpoint <strong>must</strong> use TLS/HTTPS with a certificate issued by a <strong>publicly trusted CA</strong> (e.g., Google Trust Services, Let's Encrypt, DigiCert). Self-signed or untrusted internal CAs will cause SSL handshake errors during routing.</li>
+<li><strong>Private Network Connectivity (PSC-I &amp; DNS Peering):</strong></li>
+<li>For private VPC routing, the Agent Gateway must be provisioned with <strong>PSC Interface (PSC-I)</strong> and <strong>Cloud DNS Peering</strong> to resolve and route to the internal agent IP/domain.</li>
+</ol>
+<hr />
 <h2>Architectural Foundations: A2A, Agent Engine, and Gemini Enterprise</h2>
 <h3>1. The Core Rule: Gemini Enterprise Only Supports A2A Agents</h3>
 <p>A fundamental rule governs <strong>Gemini Enterprise (Discovery Engine Assistant)</strong>:</p>

@@ -1,0 +1,7 @@
+name: centralized-agw
+protocols:
+  - MCP
+googleManaged:
+  governedAccessPath: AGENT_TO_ANYWHERE
+registries:
+  - "//agentregistry.googleapis.com/projects/deepakmichaeldev/locations/us-central1"

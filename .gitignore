@@ -176,3 +176,6 @@ cython_debug/
 
 # AI Agent workspace customizations
 .agents/
+
+# Transcript logs
+all_transcripts.md
