@@ -1,7 +1,0 @@
-name: centralized-agw-svc-ext-authz-iap-enforce
-service: iap.googleapis.com
-failOpen: false
-timeout: 1s
-metadata:
-  iamEnforcementMode: "ENFORCE"
-  iapPolicyVersion: "V1"

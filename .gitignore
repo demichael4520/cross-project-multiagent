@@ -185,3 +185,8 @@ GE_*.md
 GE_*.html
 ADK_DEPLOYMENT_COMPARISON.md
 img/
+
+# Gateway & Security manifests
+cfg/
+iap_agent_policy.json
+burger_agent_*.json

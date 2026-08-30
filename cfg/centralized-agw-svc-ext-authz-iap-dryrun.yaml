@@ -1,7 +1,0 @@
-name: centralized-agw-svc-ext-authz-iap-dryrun
-service: iap.googleapis.com
-failOpen: true
-timeout: 1s
-metadata:
-  iamEnforcementMode: "DRY_RUN"
-  iapPolicyVersion: "V1"
