@@ -40,7 +40,7 @@ sequenceDiagram
 ## Codelab Tutorial
 
 > **Note:** The step-by-step interactive walkthrough and deployment instructions are available in the official Google Cloud Codelab:
-> 
+>
 > * **[Deploy and Govern Multi-Project AI Agents with Agent Gateway and Agent Registry](https://codelabs.developers.google.com/)** *(link will be updated upon publication)*
 
 ## Repository Structure
