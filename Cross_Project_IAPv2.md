@@ -440,37 +440,37 @@ EOF
 #### Sample Validation Output:
 
 ```text
-API Name                             | GOVERNANCE   | CONCIERGE    | SELLERS     
+API Name                             | GOVERNANCE   | CONCIERGE    | SELLERS
 ------------------------------------------------------------------------------
-agentregistry.googleapis.com         | ENABLED      | ENABLED      | ENABLED     
-aiplatform.googleapis.com            | ENABLED      | ENABLED      | ENABLED     
-apphub.googleapis.com                | ENABLED      | ENABLED      | ENABLED     
-apptopology.googleapis.com           | ENABLED      | ENABLED      | ENABLED     
-cloudapiregistry.googleapis.com      | ENABLED      | ENABLED      | ENABLED     
-cloudtrace.googleapis.com            | ENABLED      | ENABLED      | ENABLED     
-compute.googleapis.com               | ENABLED      | ENABLED      | ENABLED     
-dataform.googleapis.com              | ENABLED      | ENABLED      | ENABLED     
-iam.googleapis.com                   | ENABLED      | ENABLED      | ENABLED     
-iamconnectors.googleapis.com         | ENABLED      | ENABLED      | ENABLED     
-iap.googleapis.com                   | ENABLED      | ENABLED      | ENABLED     
-logging.googleapis.com               | ENABLED      | ENABLED      | ENABLED     
-modelarmor.googleapis.com            | ENABLED      | ENABLED      | ENABLED     
-monitoring.googleapis.com            | ENABLED      | ENABLED      | ENABLED     
-networksecurity.googleapis.com       | ENABLED      | ENABLED      | ENABLED     
-networkservices.googleapis.com       | ENABLED      | ENABLED      | ENABLED     
-notebooks.googleapis.com             | ENABLED      | ENABLED      | ENABLED     
-observability.googleapis.com         | ENABLED      | ENABLED      | ENABLED     
-securitycenter.googleapis.com        | ENABLED      | ENABLED      | ENABLED     
-saasservicemgmt.googleapis.com       | ENABLED      | ENABLED      | ENABLED     
-storage.googleapis.com               | ENABLED      | ENABLED      | ENABLED     
-telemetry.googleapis.com             | ENABLED      | ENABLED      | ENABLED     
-texttospeech.googleapis.com          | ENABLED      | ENABLED      | ENABLED     
-artifactregistry.googleapis.com      | ENABLED      | ENABLED      | ENABLED     
-cloudbuild.googleapis.com            | ENABLED      | ENABLED      | ENABLED     
-cloudresourcemanager.googleapis.com  | ENABLED      | ENABLED      | ENABLED     
-iamcredentials.googleapis.com        | ENABLED      | ENABLED      | ENABLED     
-serviceusage.googleapis.com          | ENABLED      | ENABLED      | ENABLED     
-run.googleapis.com                   | ENABLED      | ENABLED      | ENABLED     
+agentregistry.googleapis.com         | ENABLED      | ENABLED      | ENABLED
+aiplatform.googleapis.com            | ENABLED      | ENABLED      | ENABLED
+apphub.googleapis.com                | ENABLED      | ENABLED      | ENABLED
+apptopology.googleapis.com           | ENABLED      | ENABLED      | ENABLED
+cloudapiregistry.googleapis.com      | ENABLED      | ENABLED      | ENABLED
+cloudtrace.googleapis.com            | ENABLED      | ENABLED      | ENABLED
+compute.googleapis.com               | ENABLED      | ENABLED      | ENABLED
+dataform.googleapis.com              | ENABLED      | ENABLED      | ENABLED
+iam.googleapis.com                   | ENABLED      | ENABLED      | ENABLED
+iamconnectors.googleapis.com         | ENABLED      | ENABLED      | ENABLED
+iap.googleapis.com                   | ENABLED      | ENABLED      | ENABLED
+logging.googleapis.com               | ENABLED      | ENABLED      | ENABLED
+modelarmor.googleapis.com            | ENABLED      | ENABLED      | ENABLED
+monitoring.googleapis.com            | ENABLED      | ENABLED      | ENABLED
+networksecurity.googleapis.com       | ENABLED      | ENABLED      | ENABLED
+networkservices.googleapis.com       | ENABLED      | ENABLED      | ENABLED
+notebooks.googleapis.com             | ENABLED      | ENABLED      | ENABLED
+observability.googleapis.com         | ENABLED      | ENABLED      | ENABLED
+securitycenter.googleapis.com        | ENABLED      | ENABLED      | ENABLED
+saasservicemgmt.googleapis.com       | ENABLED      | ENABLED      | ENABLED
+storage.googleapis.com               | ENABLED      | ENABLED      | ENABLED
+telemetry.googleapis.com             | ENABLED      | ENABLED      | ENABLED
+texttospeech.googleapis.com          | ENABLED      | ENABLED      | ENABLED
+artifactregistry.googleapis.com      | ENABLED      | ENABLED      | ENABLED
+cloudbuild.googleapis.com            | ENABLED      | ENABLED      | ENABLED
+cloudresourcemanager.googleapis.com  | ENABLED      | ENABLED      | ENABLED
+iamcredentials.googleapis.com        | ENABLED      | ENABLED      | ENABLED
+serviceusage.googleapis.com          | ENABLED      | ENABLED      | ENABLED
+run.googleapis.com                   | ENABLED      | ENABLED      | ENABLED
 ------------------------------------------------------------------------------
 ✅ All 29 required APIs are ENABLED and synchronized across all three projects.
 ```
