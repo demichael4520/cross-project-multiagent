@@ -1725,8 +1725,17 @@ in this Codelab, execute the teardown steps in strict reverse dependency order:
 
 ### 1. Clean Up Reasoning Engine Deployments
 
+Execute the included `cleanup_old_deployments.py` script across both runtime projects to delete the reasoning engines and wait for their long-running operations:
+
 ```bash
 # delete all Reasoning Engines deployed in Concierge and Sellers projects
+uv run python cleanup_old_deployments.py --project=${PROJECT_CONCIERGE} --region=${REGION}
+uv run python cleanup_old_deployments.py --project=${PROJECT_SELLERS} --region=${REGION}
+```
+
+Alternatively, you can list and delete reasoning engines inline:
+
+```bash
 uv run python -c '
 import vertexai
 import os
@@ -1774,6 +1783,9 @@ gcloud -q iam access-policies delete ${UAP_POLICY_NAME} \
 ```
 
 ### 4. Delete Agent Gateway and Security Policies
+
+> aside warning
+> **PROPAGATION DELAY:** When deleting the Agent Gateway shortly after deleting Reasoning Engines, Vertex AI requires 1–2 minutes to release internal network attachments. If you receive `FAILED_PRECONDITION: Resource ... is already being used by resource(s) ... reasoningEngines/...`, wait 60–90 seconds and re-run the `agent-gateways delete` command.
 
 ```bash
 # 1. delete authorization policy
