@@ -121,7 +121,7 @@ def main():
 
             message = str(input) if input is not None else ""
             effective_user_id = user_id or "console-tester-user"
-            effective_session_id = session_id
+            effective_session_id = session_id or f"session-{effective_user_id}"
 
             return message, effective_user_id, effective_session_id, kwargs
 

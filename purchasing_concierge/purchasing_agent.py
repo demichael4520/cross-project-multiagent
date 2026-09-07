@@ -23,6 +23,33 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.tool_context import ToolContext
 from vertexai.preview import reasoning_engines
 
+STATE_FILE = "/tmp/purchasing_concierge_shared_state.json"
+
+def get_shared_state() -> dict:
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def set_shared_state(data: dict):
+    try:
+        current = get_shared_state()
+        current.update(data)
+        with open(STATE_FILE, "w") as f:
+            json.dump(current, f)
+    except Exception:
+        pass
+
+def clear_shared_state():
+    try:
+        if os.path.exists(STATE_FILE):
+            os.remove(STATE_FILE)
+    except Exception:
+        pass
+
 class PurchasingAgent:
     """The purchasing agent.
 
@@ -68,41 +95,49 @@ class PurchasingAgent:
 
     def root_instruction(self, context: ReadonlyContext) -> str:
         current_agent = self.check_active_agent(context)
-        return f"""You are an expert purchasing delegator that can delegate the user product inquiry and purchase request to the
-appropriate seller remote agents.
+        shared = get_shared_state()
+        pending_desc = shared.get("pending_description", "None")
+        return f"""You are an expert purchasing delegator that coordinates user product inquiries and purchasing requests with remote seller agents.
+
+Routing & Intent Rules:
+- When the user's request involves burgers, fries, or burger menu items (e.g. Classic Cheeseburger, Double Cheeseburger, Spicy Chicken Burger, Spicy Cajun Burger), route EXCLUSIVELY to `burger_seller_agent`.
+- When the user's request involves pizza, pasta, or pizza menu items (e.g. Margherita, Pepperoni, Hawaiian, Veggie, BBQ Chicken), route EXCLUSIVELY to `pizza_seller_agent`.
+- When the user provides a confirmation (e.g., 'yes', 'confirmed', 'proceed', 'place this order'):
+  * If the previous topic or pending order was about pizza, delegate to `pizza_seller_agent`.
+  * If the previous topic or pending order was about burgers, delegate to `burger_seller_agent`.
+  * NEVER route a pizza confirmation to `burger_seller_agent`, and NEVER route a burger confirmation to `pizza_seller_agent`.
+  * If it is ambiguous or there is no active/pending order, ask the user to clarify: "Which order would you like to confirm: pizza or burger?"
 
 Execution:
-- For actionable tasks, you can use `send_task` to assign tasks to remote agents to perform.
-- When the remote agent is repeatedly asking for user confirmation, assume that the remote agent doesn't have access to user's conversation context.
-    So improve the task description to include all the necessary information related to that agent
-- Never ask user permission when you want to connect with remote agents. If you need to make connection with multiple remote agents, directly
-    connect with them without asking user permission or asking user preference
-- Always show the detailed response information from the seller agent and propagate it properly to the user.
-- If the remote seller is asking for confirmation, rely the confirmation question with proper and necessary information to the user if the user haven't do so.
-- If the user already confirmed the related order in the past conversation history, you can confirm on behalf of the user
-- Do not give irrelevant context to remote seller agent. For example, ordered pizza item is not relevant for the burger seller agent
-- Never ask order confirmation to the remote seller agent
-
-Please rely on tools to address the request, and don't make up the response. If you are not sure, please ask the user for more details.
-Focus on the most recent parts of the conversation primarily.
-
-If there is an active agent, send the request to that agent with the update task tool.
+- For actionable tasks, use `send_task` to assign tasks to remote agents to perform.
+- When delegating an order confirmation on behalf of the user, provide complete order details in the task so the remote seller can finalize it.
+- Never ask user permission when you want to connect with remote agents. Directly connect with them without asking user permission.
+- Always show the detailed response information from the seller agent (including prices, items, and Order IDs) and propagate it properly to the user.
+- If the remote seller is asking for confirmation, relay the confirmation question with proper and necessary information to the user.
+- If the user already confirmed the related order, you can confirm on behalf of the user.
+- Do not give irrelevant context to remote seller agent (e.g. ordered pizza item is not relevant for the burger seller agent).
 
 Agents:
 {self.agents}
 
 Current active seller agent: {current_agent["active_agent"]}
+Pending transaction context: {pending_desc}
 """
 
     def check_active_agent(self, context: ReadonlyContext):
-        state = context.state
-        if (
-            "session_id" in state
-            and "session_active" in state
-            and state["session_active"]
-            and "active_agent" in state
-        ):
-            return {"active_agent": f"{state['active_agent']}"}
+        shared = get_shared_state()
+        active = shared.get("active_agent") or shared.get("pending_agent")
+        if not active:
+            state = context.state
+            if (
+                "session_id" in state
+                and "session_active" in state
+                and state["session_active"]
+                and "active_agent" in state
+            ):
+                active = state["active_agent"]
+        if active:
+            return {"active_agent": f"{active}"}
         return {"active_agent": "None"}
 
     async def before_agent_callback(self, callback_context: CallbackContext):
@@ -199,7 +234,12 @@ Current active seller agent: {current_agent["active_agent"]}
             agent_name: The name of the agent to send the task to. Must be one of: burger_seller_agent, pizza_seller_agent.
             task: The comprehensive conversation context summary and goal to be achieved regarding user inquiry and purchase request.
         """
-        if "burger" in agent_name.lower():
+        task_lower = task.lower()
+        if "pizza" in task_lower and "burger" not in task_lower:
+            agent_name = "pizza_seller_agent"
+        elif "burger" in task_lower and "pizza" not in task_lower:
+            agent_name = "burger_seller_agent"
+        elif "burger" in agent_name.lower():
             agent_name = "burger_seller_agent"
         elif "pizza" in agent_name.lower():
             agent_name = "pizza_seller_agent"
@@ -284,6 +324,29 @@ Current active seller agent: {current_agent["active_agent"]}
 
             if not final_text:
                 final_text = "Task executed successfully by remote agent."
+
+            lower_resp = final_text.lower()
+            if "order id" in lower_resp or "has been placed" in lower_resp or "order placed" in lower_resp:
+                state["active_agent"] = None
+                state["pending_agent"] = None
+                clear_shared_state()
+                print(f"Order finalized for {agent_name}. Cleared active agent state.", flush=True)
+            elif "confirm" in lower_resp or "proceed" in lower_resp or "cost" in lower_resp or "total" in lower_resp:
+                state["active_agent"] = agent_name
+                state["pending_agent"] = agent_name
+                set_shared_state({
+                    "active_agent": agent_name,
+                    "pending_agent": agent_name,
+                    "pending_description": f"Awaiting user confirmation for {agent_name}: {task}"
+                })
+                print(f"Order pending confirmation for {agent_name}. Updated shared state.", flush=True)
+            else:
+                state["active_agent"] = agent_name
+                set_shared_state({
+                    "active_agent": agent_name,
+                    "pending_agent": agent_name,
+                    "pending_description": f"Active inquiry with {agent_name}"
+                })
 
             print(f"Response from {agent_name}: {final_text}", flush=True)
             return final_text
