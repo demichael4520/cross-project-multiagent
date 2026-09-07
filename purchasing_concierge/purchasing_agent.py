@@ -34,7 +34,7 @@ class PurchasingAgent:
         self,
         agent_ids: Dict[str, str],
     ):
-        self.agent_ids = agent_ids
+        self.agent_ids = {k: v for k, v in agent_ids.items() if v}
         self.agent_urls = {}
         self.agents = ""
         self.a2a_client_init_status = False
@@ -106,7 +106,7 @@ Current active seller agent: {current_agent["active_agent"]}
         return {"active_agent": "None"}
 
     async def before_agent_callback(self, callback_context: CallbackContext):
-        if not self.a2a_client_init_status or "burger_seller_agent" not in self.agent_ids:
+        if not self.a2a_client_init_status or not self.agent_ids.get("burger_seller_agent"):
             governance_project = (
                 os.getenv("GOVERNANCE_PROJECT_ID")
                 or os.getenv("AGENT_GATEWAY_PROJECT_ID")
@@ -155,21 +155,21 @@ Current active seller agent: {current_agent["active_agent"]}
                             discovered_agents["pizza_seller_agent"] = resource_path
                             discovered_agents["pizza-seller-agent-adk"] = resource_path
 
-                    print(f"Successfully auto-discovered agents from registry: {discovered_agents}")
+                    print(f"Successfully auto-discovered agents from registry: {discovered_agents}", flush=True)
                 else:
-                    print(f"Warning: Agent Registry request to {url} returned HTTP {resp.status_code}: {resp.text}")
+                    print(f"Warning: Agent Registry request to {url} returned HTTP {resp.status_code}: {resp.text}", flush=True)
 
                 if discovered_agents:
                     self.agent_ids.update(discovered_agents)
             except Exception as e:
-                print(f"Warning: Failed to auto-discover agents from Agent Registry in project {governance_project}: {e}")
+                print(f"Warning: Failed to auto-discover agents from Agent Registry in project {governance_project}: {e}", flush=True)
 
-            # Fallback to environment variables if present (no hardcoded defaults)
-            if "burger_seller_agent" not in self.agent_ids and os.getenv("BURGER_SELLER_AGENT_ID"):
+            # Fallback to environment variables if present
+            if not self.agent_ids.get("burger_seller_agent") and os.getenv("BURGER_SELLER_AGENT_ID"):
                 self.agent_ids["burger_seller_agent"] = os.getenv("BURGER_SELLER_AGENT_ID")
                 self.agent_ids["burger-seller-agent-adk"] = os.getenv("BURGER_SELLER_AGENT_ID")
 
-            if "pizza_seller_agent" not in self.agent_ids and os.getenv("PIZZA_SELLER_AGENT_ID"):
+            if not self.agent_ids.get("pizza_seller_agent") and os.getenv("PIZZA_SELLER_AGENT_ID"):
                 self.agent_ids["pizza_seller_agent"] = os.getenv("PIZZA_SELLER_AGENT_ID")
                 self.agent_ids["pizza-seller-agent-adk"] = os.getenv("PIZZA_SELLER_AGENT_ID")
 
@@ -204,8 +204,18 @@ Current active seller agent: {current_agent["active_agent"]}
         elif "pizza" in agent_name.lower():
             agent_name = "pizza_seller_agent"
 
-        if agent_name not in self.agent_ids and agent_name not in self.agent_urls:
-            return f"Error: Agent {agent_name} not found"
+        # Check in self.agent_ids or fallback to env vars
+        agent_id = self.agent_ids.get(agent_name)
+        if not agent_id:
+            if agent_name == "burger_seller_agent":
+                agent_id = os.getenv("BURGER_SELLER_AGENT_ID")
+            elif agent_name == "pizza_seller_agent":
+                agent_id = os.getenv("PIZZA_SELLER_AGENT_ID")
+            if agent_id:
+                self.agent_ids[agent_name] = agent_id
+
+        if not agent_id and agent_name not in self.agent_urls:
+            return f"Error: Agent {agent_name} not found in registered agents: {list(self.agent_ids.keys())}"
 
         state = tool_context.state
         state["active_agent"] = agent_name
@@ -213,7 +223,6 @@ Current active seller agent: {current_agent["active_agent"]}
         if "session_id" not in state:
             state["session_id"] = str(uuid.uuid4())
         session_id = state["session_id"]
-        agent_id = self.agent_ids.get(agent_name)
         if not agent_id:
             return f"Error: ID for agent {agent_name} not found"
 
@@ -223,32 +232,63 @@ Current active seller agent: {current_agent["active_agent"]}
             agent_id = f"projects/{seller_project}/locations/{location}/reasoningEngines/{agent_id}"
 
         try:
-            print(f"Calling remote agent {agent_name} (ID: {agent_id}) with task: {task}")
+            print(f"Calling remote agent {agent_name} (ID: {agent_id}) with task: {task}", flush=True)
             if agent_id.startswith("projects/"):
                 parts = agent_id.split("/")
                 target_project = parts[1]
             else:
                 target_project = os.getenv("PROJECT_SELLERS") or os.getenv("GOOGLE_CLOUD_PROJECT") or "agent-runtime2"
             location = os.getenv("AGENT_REGION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
-            vertexai.init(project=target_project, location=location)
-            engine = reasoning_engines.ReasoningEngine(agent_id)
-            try:
-                res = engine.query(message=task, user_id="purchasing_agent", session_id=session_id)
-            except Exception:
-                res = engine.query(input={"message": task, "user_id": "purchasing_agent", "session_id": session_id})
 
-            if isinstance(res, dict) and "output" in res:
-                final_text = res["output"]
+            import google.auth
+            import google.auth.transport.requests
+            import requests
+
+            credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            auth_req = google.auth.transport.requests.Request()
+            credentials.refresh(auth_req)
+            headers = {
+                "Authorization": f"Bearer {credentials.token}",
+                "Content-Type": "application/json"
+            }
+            ca_bundle = "/etc/ssl/certs/ca-certificates.crt" if os.path.exists("/etc/ssl/certs/ca-certificates.crt") else True
+            rest_url = f"https://{location}-aiplatform.mtls.googleapis.com/v1beta1/{agent_id}:query"
+            payload = {
+                "input": {
+                    "message": task,
+                    "user_id": "purchasing_agent",
+                    "session_id": session_id
+                }
+            }
+            print(f"Sending REST POST to {rest_url} (verify={ca_bundle})", flush=True)
+            resp = requests.post(rest_url, headers=headers, json=payload, verify=ca_bundle, timeout=60)
+            if resp.status_code == 403:
+                err_msg = f"HTTP 403 Forbidden. Access to {agent_name} was denied by security policy: {resp.text}"
+                print(f"Authz denied for {agent_name}: {err_msg}", flush=True)
+                return f"Error calling agent {agent_name}: {err_msg}"
+            elif resp.status_code != 200:
+                err_msg = f"HTTP {resp.status_code}: {resp.text}"
+                print(f"Error calling {agent_name}: {err_msg}", flush=True)
+                return f"Error calling agent {agent_name}: {err_msg}"
+
+            res_json = resp.json()
+            output_obj = res_json.get("output", {})
+            if isinstance(output_obj, dict):
+                final_text = output_obj.get("text") or output_obj.get("output")
+                if not final_text and "content" in output_obj:
+                    parts = output_obj.get("content", {}).get("parts", [])
+                    if parts:
+                        final_text = parts[0].get("text")
             else:
-                final_text = str(res)
+                final_text = str(output_obj)
 
             if not final_text:
                 final_text = "Task executed successfully by remote agent."
 
-            print(f"Response from {agent_name}: {final_text}")
+            print(f"Response from {agent_name}: {final_text}", flush=True)
             return final_text
         except Exception as e:
-            print(f"Error calling remote agent {agent_name}: {e}")
+            print(f"Error calling remote agent {agent_name}: {e}", flush=True)
             import traceback
             traceback.print_exc()
             return f"Error calling agent {agent_name}: {e}"

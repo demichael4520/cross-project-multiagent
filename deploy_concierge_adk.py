@@ -19,7 +19,8 @@ os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 import vertexai
 import agentplatform
 from dotenv import load_dotenv
-
+load_dotenv("burger_agent.env")
+load_dotenv("pizza_agent.env")
 load_dotenv("seller_agents.env")
 load_dotenv()
 from cleanup_old_deployments import delete_old_deployments
@@ -193,6 +194,7 @@ def main():
 
     concierge_config = {
         "staging_bucket": staging_bucket_uri,
+        "gcs_dir_name": "concierge_agent",
         "display_name": "purchasing-concierge-adk",
         "requirements": [
             "google-cloud-aiplatform[agent_engines]>=1.149.0",

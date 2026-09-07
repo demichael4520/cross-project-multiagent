@@ -168,6 +168,7 @@ def main():
 
     pizza_config = {
         "staging_bucket": staging_bucket_uri,
+        "gcs_dir_name": "pizza_agent",
         "display_name": "pizza-seller-agent-adk",
         "requirements": [
             "google-cloud-aiplatform[agent_engines]>=1.149.0",
